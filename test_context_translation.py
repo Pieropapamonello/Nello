@@ -2,11 +2,17 @@ import json
 import unittest
 from unittest.mock import MagicMock, patch
 
-from context_translation import phrases, translate
+from context_translation import phrases, translate, clarify_source
 from subtitles import translate_cues, TranslationUnavailable
 
 
 class ContextTranslationTests(unittest.TestCase):
+    def test_asr_like_button_is_not_a_filler_or_comparison(self):
+        self.assertIn('the "Like" button', clarify_source('When you press, like, it turns into a cat.', 'en'))
+        self.assertEqual(clarify_source('Press like this, then freeze the food.', 'en'),
+                         'Press like this, then freeze the food.')
+        self.assertEqual(clarify_source('They freeze in place.', 'en'), 'They remain motionless.')
+
     def test_words_are_grouped_without_crossing_silence_or_sentence_end(self):
         cues = [(0, 200, 'This'), (200, 400, 'makes'), (400, 800, 'it freeze.'),
                 (3000, 3500, 'Then it moves.')]

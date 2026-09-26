@@ -6,6 +6,17 @@ import re
 ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions'
 
 
+def clarify_source(text, language):
+    if language != 'en':
+        return text
+    # ASR often punctuates the social button name as the filler "like". Only
+    # disambiguate the command pattern, never comparisons such as "press like this".
+    text = re.sub(r'\b(press|tap|hit|click)\s*,?\s+like\s*,?(?=\s+(?:it|and|to)\b)',
+                  lambda m: m[1] + ' the "Like" button,', text, flags=re.I)
+    text = re.sub(r'\bfreeze in place\b', 'remain motionless', text, flags=re.I)
+    return text
+
+
 def phrases(cues):
     groups = []
     current = None
@@ -78,7 +89,8 @@ def translate(cues, session, source_language):
              'Restituisci esclusivamente JSON: {"translations":[{"id":0,"text":"..."},...]}. '
              'Una traduzione completa per ogni id, nello stesso ordine, senza markup o commenti.'},
             {'role': 'user', 'content': json.dumps({'source_language': source_language,
-                'captions': [{'id': i, 'text': text} for i, (_, _, text) in enumerate(groups)]}, ensure_ascii=False)},
+                'captions': [{'id': i, 'text': clarify_source(text, source_language)}
+                             for i, (_, _, text) in enumerate(groups)]}, ensure_ascii=False)},
         ],
     }
     with session.post(ENDPOINT, headers={'Authorization': 'Bearer ' + os.environ['GROQ_API_KEY']},
