@@ -25,6 +25,40 @@ class SkipSpeech(Exception):
     pass
 
 
+def remote_english_cues(audio, duration):
+    """Full-context ASR when Groq Free is configured; no Italian forcing."""
+    if not os.getenv('GROQ_API_KEY', '').strip():
+        return None
+    import requests
+    try:
+        with open(audio, 'rb') as file, requests.post(
+                'https://api.groq.com/openai/v1/audio/transcriptions',
+                headers={'Authorization': 'Bearer ' + os.environ['GROQ_API_KEY']},
+                files={'file': ('audio.wav', file, 'audio/wav')},
+                data={'model': 'whisper-large-v3', 'response_format': 'verbose_json', 'temperature': '0'},
+                timeout=(10, 45), allow_redirects=False, stream=True) as response:
+            if response.status_code != 200:
+                return None
+            raw = bytearray()
+            for chunk in response.iter_content(16384):
+                raw.extend(chunk)
+                if len(raw) > 1024 * 1024:
+                    return None
+            data = json.loads(raw)
+        if str(data.get('language', '')).strip().lower() not in ('en', 'english'):
+            raise SkipSpeech('remote_language_not_english')
+        converted = {'result': {'language': 'en'}, 'transcription': []}
+        for segment in data.get('segments', []):
+            if segment.get('no_speech_prob', 0) > .6 and segment.get('avg_logprob', 0) < -1:
+                continue
+            converted['transcription'].append({'offsets': {'from': round(segment['start'] * 1000),
+                                                          'to': round(segment['end'] * 1000)},
+                                                'text': segment['text']})
+        return transcript_cues(converted, duration, 'en')
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        return None
+
+
 def english_detection(output):
     matches = re.findall(r'auto-detected language:\s*([a-z]+)\s*\(p\s*=\s*([\d.]+)\)', output)
     if not matches:
@@ -162,8 +196,10 @@ def build_from_audio(source, output):
                     seconds = len(frames) / 32000
                     parts.append((part, seconds, offset))
                     offset += round(seconds * 1000)
-        cues = []
-        for part, seconds, offset in parts:
+        cues = remote_english_cues(audio, duration) if source_language == 'en' else None
+        for part, seconds, offset in ([] if cues else parts):
+            if cues is None:
+                cues = []
             command[command.index('-f') + 1] = str(part)
             with transcript_log.open('wb') as handle:
                 subprocess.run(command + ['-l', source_language, '--vad', '-vm', VAD_MODEL, '-vsd', '500', '-vp', '50',
@@ -180,8 +216,11 @@ def build_from_audio(source, output):
         from burned_captions import source_captions
         visual = source_captions(source, cues, duration, meta) if source_language == 'en' else None
         if visual:
-            cues, box, exact = visual
-            (directory / 'caption_layout.json').write_text(json.dumps({'box': box, 'source': 'burned' if exact else 'speech'}), encoding='utf-8')
+            # OCR locates the English band to cover, but short moving words are
+            # often missed (including negations). Translate the complete spoken
+            # phrases instead of replacing them with incomplete screen text.
+            _, box, _ = visual
+            (directory / 'caption_layout.json').write_text(json.dumps({'box': box, 'source': 'speech'}), encoding='utf-8')
         import requests
         with requests.Session() as session:
             translated = translate_cues(cues, session, source_language)

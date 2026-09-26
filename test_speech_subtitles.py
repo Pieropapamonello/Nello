@@ -8,6 +8,22 @@ from speech_subtitles import (english_detection, transcript_cues, readable_cues,
 
 
 class SpeechTests(unittest.TestCase):
+    def test_remote_english_source_keeps_whole_phrase_and_rejects_italian(self):
+        import json
+        from speech_subtitles import remote_english_cues
+        with tempfile.TemporaryDirectory() as directory, patch.dict('os.environ', {'GROQ_API_KEY': 'test-key'}), \
+             patch('requests.post') as post:
+            audio = Path(directory) / 'audio.wav'; audio.write_bytes(b'audio')
+            response = post.return_value.__enter__.return_value
+            response.status_code = 200
+            response.iter_content.return_value = [json.dumps({'language': 'English', 'segments': [
+                {'start': 0, 'end': 2, 'text': 'It is not the main reason.'}]}).encode()]
+            self.assertEqual(remote_english_cues(audio, 2), [(0, 2000, 'It is not the main reason.')])
+            self.assertNotIn('language', post.call_args.kwargs['data'])
+            response.iter_content.return_value = [b'{"language":"Italian","segments":[]}']
+            with self.assertRaises(SkipSpeech):
+                remote_english_cues(audio, 2)
+
     def test_foreign_speech_supported_italian_and_uncertain_skipped(self):
         for code in ('en', 'fr', 'es', 'de', 'ja', 'ar'):
             self.assertEqual(foreign_language(f'auto-detected language: {code} (p = 0.99)'), code)

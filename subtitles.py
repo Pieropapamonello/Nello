@@ -149,6 +149,14 @@ def translate_cues(cues, session, source_language='en'):
         raise ValueError('invalid source language')
     if source_language == 'it':
         return cues
+    if os.getenv('GROQ_API_KEY', '').strip():
+        from context_translation import translate as translate_context
+        try:
+            return translate_context(cues, session, source_language)
+        except Exception as exc:
+            # Preserve the original video on quota/errors, instead of silently
+            # reverting to the isolated-word translations that lose meaning.
+            raise TranslationUnavailable('context_translation:' + type(exc).__name__) from None
     if source_language == 'en' and available():
         return translate(cues)
     batches, batch = [], []
