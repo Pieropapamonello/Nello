@@ -51,7 +51,7 @@ def caption_metadata(info):
         original = {language(k) for k in auto if k.endswith('-orig')}
         if len(original) == 1:
             source = original.pop()
-    if not source or source == 'it':
+    if not source:
         return {}
     selected = {}
     for group in (info.get('subtitles') or {}, auto):
@@ -65,7 +65,7 @@ def caption_metadata(info):
                 item = {k: track[k] for k in ('ext', 'url', 'data') if k in track}
                 if len(json.dumps(item)) <= MAX_BYTES:
                     selected.setdefault(lang, []).append(item)
-    if not selected:
+    if not selected and source != 'it':
         return {}
     return {'language': source, 'tracks': {k: v[:8] for k, v in selected.items()},
             'duration': info.get('duration')}
@@ -226,10 +226,22 @@ def srt_time(ms):
 
 def build_subtitles(meta, output):
     source_language = language(meta.get('language'))
-    if not source_language or source_language == 'it' or not 0 < float(meta.get('duration') or 0) <= MAX_DURATION:
+    if not source_language or not 0 < float(meta.get('duration') or 0) <= MAX_DURATION:
         return False
     import requests
     with requests.Session() as session:
+        for track in meta.get('tracks', {}).get('it', [])[:2]:
+            try:
+                cues = fetch_track(track, session)
+                if cues:
+                    Path(output).write_text('\n\n'.join(
+                        f'{i}\n{srt_time(a)} --> {srt_time(b)}\n{html.escape(t, quote=False)}'
+                        for i, (a, b, t) in enumerate(cues, 1)) + '\n', encoding='utf-8')
+                    return True
+            except Exception as exc:
+                log.info('Italian subtitles unavailable: %s', type(exc).__name__)
+        if source_language == 'it':
+            return False
         source = meta.get('_source_path')
         if source and Path(source).is_file():
             # Same verified-mask pipeline for videos with native caption tracks.

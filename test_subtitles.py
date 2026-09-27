@@ -18,14 +18,28 @@ class CaptionTests(unittest.TestCase):
     def test_english_requires_source_language_not_title_or_translation(self):
         base = {'subtitles': {'en': [TRACK], 'it': [TRACK]}, 'duration': 3,
                 'title': 'This is an English title'}
-        for lang in ('', 'it'):
+        for lang in ('',):
             self.assertEqual(caption_metadata(dict(base, language=lang)), {})
         self.assertEqual(caption_metadata(dict(base, language='fr'))['language'], 'fr')
         self.assertEqual(caption_metadata(dict(base, language='en-US'))['language'], 'en')
         info = dict(base, automatic_captions={'en-orig': [TRACK]})
         self.assertEqual(caption_metadata(info)['language'], 'en')
         info['requested_formats'] = [{'acodec': 'aac', 'language': 'it'}]
-        self.assertEqual(caption_metadata(info), {})
+        self.assertEqual(caption_metadata(info)['language'], 'it')
+
+    def test_italian_audio_and_captions_skip_translation_and_ocr(self):
+        meta = caption_metadata({'language': 'en', 'duration': 3,
+            'requested_formats': [{'acodec': 'aac', 'language': 'it-IT'}],
+            'subtitles': {'it': [TRACK], 'en': [TRACK]}})
+        with tempfile.TemporaryDirectory() as directory, patch('subtitles.translate_cues') as translate:
+            path = Path(directory) / 'italian.srt'
+            meta['_source_path'] = __file__
+            with patch('subprocess.check_output') as probe:
+                self.assertTrue(build_subtitles(meta, path))
+                probe.assert_not_called()
+            translate.assert_not_called()
+            self.assertIn('Ciao mondo', path.read_text(encoding='utf-8'))
+        self.assertEqual(caption_metadata({'language': 'it', 'duration': 3})['language'], 'it')
 
     def test_foreign_track_uses_its_language_not_english_model(self):
         session = MagicMock()
@@ -111,7 +125,7 @@ class CaptionTests(unittest.TestCase):
 
     def test_italian_unknown_and_long_videos_not_processed(self):
         with tempfile.TemporaryDirectory() as directory, patch('requests.Session') as session:
-            for lang, duration in (('it', 3), ('', 3), ('en', 181), ('en', 0)):
+            for lang, duration in (('it', 0), ('', 3), ('en', 181), ('en', 0)):
                 self.assertFalse(build_subtitles({'language': lang, 'duration': duration,
                                                  'tracks': {'it': [TRACK]}}, Path(directory) / 'italian.srt'))
             session.assert_not_called()

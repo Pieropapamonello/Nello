@@ -122,7 +122,7 @@ def ensure_pot_provider(opts):
          'build/main.js', '--port', '4416'], cwd='/opt/bgutil/server',
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     import urllib.request
-    for _ in range(50):
+    for _ in range(300):
         if _pot_provider.poll() is not None:
             raise RuntimeError('PO token provider failed to start')
         try:

@@ -272,7 +272,7 @@ class SocialMediaDownloader(TikTokMixin, InstagramMixin, FacebookMixin, CobaltMi
         if 'youtube' in url.lower() or 'youtu.be' in url.lower():
             # Preferisci il formato progressivo mp4 (es. itag 18: audio+video gia' uniti,
             # nessun merge necessario). Fallback su adattivo+merge solo se serve.
-            opts['format'] = 'best[ext=mp4][acodec!=none]/bestvideo+bestaudio/best'
+            opts['format'] = 'best[language^=it]/bestvideo+bestaudio[language^=it]/best[ext=mp4][acodec!=none]/bestvideo+bestaudio/best'
             opts['merge_output_format'] = 'mp4'
 
             opts['http_headers'].update({
@@ -290,7 +290,7 @@ class SocialMediaDownloader(TikTokMixin, InstagramMixin, FacebookMixin, CobaltMi
                 # Safari HLS does not need a GVS token. Avoid generating an
                 # unused HTTPS token alongside the JavaScript challenge solver.
                 opts['extractor_args']['youtube']['fetch_pot'] = ['never']
-                opts['format'] = 'best[protocol^=m3u8]/best'
+                opts['format'] = 'best[language^=it]/bestvideo+bestaudio[language^=it]/best[protocol^=m3u8]/best'
             if os.path.exists(self.youtube_cookies):
                 opts['cookiefile'] = self.youtube_cookies
 

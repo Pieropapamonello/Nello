@@ -13,6 +13,26 @@ from youtube_job import run_youtube_job, YouTubeResourceError, memory_pressure
 
 
 class YouTubeJobTests(unittest.TestCase):
+    def test_italian_audio_preferred_to_english_progressive(self):
+        import yt_dlp
+        # Exercise the same selector used by the extractor, without network.
+        source = Path('social_downloader.py').read_text(encoding='utf-8')
+        import re
+        selectors = re.findall(r"opts\['format'\] = '([^']*language\^=it[^']*)'", source)
+        self.assertEqual(len(selectors), 2)
+        formats = [
+            {'format_id': 'en', 'url': 'https://example.org/en.mp4', 'ext': 'mp4', 'vcodec': 'h264', 'acodec': 'aac', 'language': 'en'},
+            {'format_id': 'video', 'url': 'https://example.org/v.mp4', 'ext': 'mp4', 'vcodec': 'h264', 'acodec': 'none'},
+            {'format_id': 'it', 'url': 'https://example.org/it.m4a', 'ext': 'm4a', 'vcodec': 'none', 'acodec': 'aac', 'language': 'it-IT'},
+        ]
+        for selector in selectors:
+            with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+                select = ydl.build_format_selector(selector)
+                result = list(select({'formats': formats, 'has_merged_format': True, 'incomplete_formats': False}))
+                self.assertEqual(result[0]['requested_formats'][-1]['language'], 'it-IT')
+                fallback = list(select({'formats': formats[:1], 'has_merged_format': True, 'incomplete_formats': False}))
+                self.assertEqual(fallback[0]['language'], 'en')
+
     def test_cgroup_pressure(self):
         with patch.object(Path, 'read_text', side_effect=['490000000', '536870912', 'inactive_file 0']):
             self.assertTrue(memory_pressure())

@@ -207,8 +207,15 @@ def build_app(token=None, downloader_factory=None):
                     subtitle_meta = result.pop('_subtitle_meta', None)
                     subtitle_path = None
                     already_italian = False
+                    if subtitle_meta and body.get('subtitles', True) and subtitle_meta.get('tracks', {}).get('it'):
+                        # Prefer existing Italian captions over OCR or retranslation.
+                        native_meta = dict(subtitle_meta, language='it')
+                        subtitle_path = await asyncio.to_thread(prepare_subtitles, native_meta, directory.name)
+                    if subtitle_meta and subtitle_meta.get('language') == 'it':
+                        already_italian = True
                     if (body.get('subtitles', True) and result.get('type') == 'video'
-                            and body.get('kind') != 'audio' and len(paths) == 1 and downloader_factory is None):
+                            and body.get('kind') != 'audio' and len(paths) == 1 and downloader_factory is None
+                            and not subtitle_path and not already_italian):
                         source = Path(paths[0]).resolve()
                         if not source.is_relative_to(Path(directory.name).resolve()):
                             raise ValueError('media outside job directory')
@@ -270,7 +277,7 @@ def build_app(token=None, downloader_factory=None):
                     result.pop('file_path', None)
                     result.pop('files', None)
                     result['media'] = descriptors
-                    result['video_processing_version'] = 7
+                    result['video_processing_version'] = 8
                     result['_delivery_prepared'] = target in ('whatsapp', 'discord')
                 job['result'] = result
                 if platform and cookie_version == inspect_content(read_content(platform), platform)['version']:
