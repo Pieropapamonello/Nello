@@ -129,6 +129,8 @@ def ensure_pot_provider(opts):
         try:
             with urllib.request.urlopen('http://127.0.0.1:4416/ping', timeout=1) as response:
                 if response.status == 200:
+                    version = json.load(response).get('version', 'unknown')
+                    logging.getLogger(__name__).info('YouTube token server version=%s', version)
                     return
         except OSError:
             time.sleep(0.1)

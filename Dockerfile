@@ -15,13 +15,13 @@ FROM python:3.11-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg fonts-dejavu-core tesseract-ocr tesseract-ocr-all git curl ca-certificates gnupg unzip gcc \
- && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+ && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
  && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip -o /tmp/deno.zip \
  && unzip /tmp/deno.zip -d /usr/local/bin/ && rm /tmp/deno.zip
-RUN git clone --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil \
- && cd /opt/bgutil/server && npm install && npx tsc
+RUN git clone --depth 1 --branch 2.0.0 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil \
+ && cd /opt/bgutil/server && npm ci && npx tsc
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 RUN curl -fL --retry 3 https://argos-net.com/v1/translate-en_it-1_0.argosmodel -o /tmp/en_it.zip \
