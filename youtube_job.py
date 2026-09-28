@@ -113,7 +113,7 @@ def ensure_pot_provider(opts):
     args = opts.get('extractor_args', {}).get('youtube', {})
     if (os.environ.get('NELLO_ISOLATED_MEDIA_WORKER') != '1'
             or args.get('fetch_pot') == ['never']
-            or 'mweb' not in args.get('player_client', [])):
+            or not set(args.get('player_client', [])) & {'mweb', 'web_safari'}):
         return
     if _pot_provider is not None and _pot_provider.poll() is None:
         return
@@ -122,7 +122,8 @@ def ensure_pot_provider(opts):
          'build/main.js', '--port', '4416'], cwd='/opt/bgutil/server',
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     import urllib.request
-    for _ in range(300):
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
         if _pot_provider.poll() is not None:
             raise RuntimeError('PO token provider failed to start')
         try:
@@ -140,13 +141,18 @@ def execute_job(job):
     warnings = []
     class JobLogger:
         def debug(self, message):
-            pass
+            # Only fixed diagnostic categories; never dump options, cookies or tokens.
+            for prefix in ('[debug] [youtube] [pot] PO Token Providers:',
+                           '[debug] Request Handlers:'):
+                if message.startswith(prefix):
+                    warnings.append(message[:400])
         def warning(self, message):
             warnings.append(re.sub(r'https?://\S+', '[URL]', str(message))[:700])
         def error(self, message):
             pass
     job['opts']['logger'] = JobLogger()
     job['opts']['no_warnings'] = False
+    job['opts']['verbose'] = True
     try:
         with yt_dlp.YoutubeDL(job['opts']) as ydl:
             info = (ydl.process_ie_result(job['info'], download=True)
