@@ -33,6 +33,19 @@ class YouTubeJobTests(unittest.TestCase):
                 fallback = list(select({'formats': formats[:1], 'has_merged_format': True, 'incomplete_formats': False}))
                 self.assertEqual(fallback[0]['language'], 'en')
 
+    def test_public_fallback_does_not_reuse_account_cookie(self):
+        from types import SimpleNamespace
+        from social_downloader import SocialMediaDownloader
+        dl = SimpleNamespace(base_opts={'cookiefile': 'stale'}, proxy=None,
+            get_random_user_agent=lambda: 'test', youtube_cookies='managed')
+        with patch('os.path.exists', return_value=True):
+            authenticated = SocialMediaDownloader.get_ydl_opts(dl, 'https://youtube.com/shorts/test', 1)
+            public = SocialMediaDownloader.get_ydl_opts(dl, 'https://youtube.com/shorts/test', 2)
+        self.assertEqual(authenticated['cookiefile'], 'managed')
+        self.assertNotIn('cookiefile', public)
+        self.assertEqual(public['extractor_args']['youtube']['player_client'], ['android_vr'])
+        self.assertIn('language^=it', public['format'])
+
     def test_cgroup_pressure(self):
         with patch.object(Path, 'read_text', side_effect=['490000000', '536870912', 'inactive_file 0']):
             self.assertTrue(memory_pressure())

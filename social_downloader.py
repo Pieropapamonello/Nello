@@ -281,7 +281,7 @@ class SocialMediaDownloader(TikTokMixin, InstagramMixin, FacebookMixin, CobaltMi
 
             # One client per disposable process; web clients support account cookies.
             opts['js_runtimes'] = {'deno': {}}
-            clients = ('web_safari', 'mweb', 'mweb')
+            clients = ('web_safari', 'mweb', 'android_vr')
             opts['extractor_args'] = {
                 'youtube': {'player_client': [clients[min(attempt, 2)]]},
                 'youtubepot-bgutilhttp': {'base_url': ['http://127.0.0.1:4416']},
@@ -1065,6 +1065,12 @@ class SocialMediaDownloader(TikTokMixin, InstagramMixin, FacebookMixin, CobaltMi
                         continue
                     break # Vai ai fallback
 
+                if platform == 'youtube':
+                    audio_formats = [f for f in info.get('requested_formats', [])
+                                     if f.get('acodec') not in (None, 'none')]
+                    audio_languages = sorted({f.get('language', 'unknown') for f in audio_formats})
+                    logger.info('YouTube selected audio: languages=%s format=%s',
+                                audio_languages or [info.get('language', 'unknown')], info.get('format_id'))
                 self._subtitle_source_info = info
                 return {
                     'success': True,
