@@ -107,7 +107,7 @@ ISSUE_PRIORITY = {'login_required': 1, 'session_rejected': 2, 'access_denied': 3
 
 
 def classify_access(text):
-    text = str(text).lower()
+    text = str(text).lower().replace('\u2019', "'").replace('\u2018', "'")
     for issue in ISSUE_PRIORITY:
         if text.startswith('instagram access diagnostic: ' + issue + ' '):
             return issue

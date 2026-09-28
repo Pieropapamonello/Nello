@@ -38,6 +38,12 @@ class HealthTests(unittest.TestCase):
         diagnostics.emit(logging.LogRecord('test', 40, '', 0, 'redirected to the login page', (), None))
         self.assertEqual(diagnostics.issue, 'login_required')
 
+    def test_youtube_curly_apostrophe_is_access_check_not_expired(self):
+        diagnostics = AuthDiagnostics()
+        diagnostics.emit(logging.LogRecord('test', 40, '', 0,
+            'Sign in to confirm you\u2019re not a bot. Use cookies.', (), None))
+        self.assertEqual(diagnostics.issue, 'access_check')
+
     def test_override_survives_new_reader(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'COOKIE_UPDATE_DIR': directory}):
             install_live('instagram', cookie())
