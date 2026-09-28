@@ -286,6 +286,8 @@ class SocialMediaDownloader(TikTokMixin, InstagramMixin, FacebookMixin, CobaltMi
                 'youtube': {'player_client': [clients[min(attempt, 2)]], 'fetch_pot': ['always']},
                 'youtubepot-bgutilhttp': {'base_url': ['http://127.0.0.1:4416']},
             }
+            if attempt == 1:
+                opts['extractor_args']['youtube']['innertube_host'] = ['youtubei.googleapis.com']
             if attempt == 0:
                 # Request tokens for the player and caption endpoints too;
                 # HLS availability alone does not establish API access.
