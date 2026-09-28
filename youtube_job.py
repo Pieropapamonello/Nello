@@ -140,6 +140,15 @@ def ensure_pot_provider(opts):
 def execute_job(job):
     ensure_pot_provider(job['opts'])
     import yt_dlp
+    from urllib.parse import urlsplit
+    host = (urlsplit(job['url']).hostname or '').lower()
+    if host == 'youtu.be' or host == 'youtube.com' or host.endswith('.youtube.com'):
+        # Use one coherent browser transport, including TLS and HTTP headers.
+        from yt_dlp.networking.impersonate import ImpersonateTarget
+        job['opts']['impersonate'] = ImpersonateTarget.from_str('chrome')
+        headers = job['opts'].get('http_headers', {}).copy()
+        headers.pop('User-Agent', None)
+        job['opts']['http_headers'] = headers
     warnings = []
     class JobLogger:
         def debug(self, message):
