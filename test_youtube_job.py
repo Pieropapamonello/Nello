@@ -46,6 +46,20 @@ class YouTubeJobTests(unittest.TestCase):
         self.assertEqual(public['extractor_args']['youtube']['player_client'], ['android_vr'])
         self.assertIn('language^=it', public['format'])
 
+    def test_token_server_startup_has_wall_clock_deadline(self):
+        from youtube_job import ensure_pot_provider
+        from unittest.mock import MagicMock
+        child = MagicMock()
+        child.poll.return_value = None
+        with patch.dict('os.environ', {'NELLO_ISOLATED_MEDIA_WORKER': '1'}), \
+                patch('youtube_job._pot_provider', None), \
+                patch('youtube_job.subprocess.Popen', return_value=child), \
+                patch('youtube_job.time.monotonic', side_effect=[0, 0, 31]), \
+                patch('youtube_job.time.sleep'), \
+                patch('urllib.request.urlopen', side_effect=OSError):
+            with self.assertRaisesRegex(RuntimeError, 'startup timed out'):
+                ensure_pot_provider({'extractor_args': {'youtube': {'player_client': ['mweb']}}})
+
     def test_cgroup_pressure(self):
         with patch.object(Path, 'read_text', side_effect=['490000000', '536870912', 'inactive_file 0']):
             self.assertTrue(memory_pressure())
