@@ -161,11 +161,34 @@ def execute_job(job):
             warnings.append(re.sub(r'https?://\S+', '[URL]', str(message))[:700])
         def error(self, message):
             pass
+    class DiagnosticYoutubeDL(yt_dlp.YoutubeDL):
+        def urlopen(self, request):
+            from yt_dlp.networking.exceptions import HTTPError
+            from yt_dlp.networking.common import Response
+            import io
+            try:
+                return super().urlopen(request)
+            except HTTPError as exc:
+                parts = urlsplit(exc.response.url)
+                if exc.status == 403 and parts.hostname in ('www.youtube.com', 'youtubei.googleapis.com') and parts.path.startswith('/youtubei/v1/'):
+                    original = exc.response
+                    prefix = original.read(65536)
+                    exc.response = Response(io.BytesIO(prefix), original.url, dict(original.headers), status=403)
+                    original.close()
+                    content = prefix.decode('utf-8', errors='replace').lower()
+                    categories = [name for name, phrase in (
+                        ('api_identity', 'unregistered callers'), ('api_key', 'api key'),
+                        ('automated_traffic', 'automated queries'), ('unusual_traffic', 'unusual traffic'),
+                        ('permission', 'permission'), ('login', 'sign in'),
+                        ('blocked', 'blocked')) if phrase in content]
+                    warnings.append('YouTube API denied: host=' + str(parts.hostname)
+                                    + ' reasons=' + ','.join(categories or ['unspecified']))
+                raise
     job['opts']['logger'] = JobLogger()
     job['opts']['no_warnings'] = False
     job['opts']['verbose'] = True
     try:
-        with yt_dlp.YoutubeDL(job['opts']) as ydl:
+        with DiagnosticYoutubeDL(job['opts']) as ydl:
             info = (ydl.process_ie_result(job['info'], download=True)
                     if job['download'] and job.get('info') else
                     ydl.extract_info(job['url'], download=job['download']))
