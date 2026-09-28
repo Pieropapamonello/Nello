@@ -60,6 +60,22 @@ class YouTubeJobTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'startup timed out'):
                 ensure_pot_provider({'extractor_args': {'youtube': {'player_client': ['mweb']}}})
 
+    def test_api_diagnostics_do_not_log_response_secrets(self):
+        import io
+        import yt_dlp
+        from yt_dlp.networking.common import Response
+        from yt_dlp.networking.exceptions import HTTPError
+        from youtube_job import execute_job
+        response = Response(io.BytesIO(b'{"error":{"message":"unregistered callers PRIVATE_SECRET"}}'),
+                            'https://youtubei.googleapis.com/youtubei/v1/player', {}, status=403)
+        def extract(ydl, *args, **kwargs):
+            return ydl.urlopen(None)
+        with patch.object(yt_dlp.YoutubeDL, 'extract_info', extract), \
+                patch.object(yt_dlp.YoutubeDL, 'urlopen', side_effect=HTTPError(response)):
+            result = execute_job({'opts': {'quiet': True}, 'url': 'https://example.org/test', 'download': False})
+        self.assertIn('api_identity', str(result['warnings']))
+        self.assertNotIn('PRIVATE_SECRET', str(result))
+
     def test_cgroup_pressure(self):
         with patch.object(Path, 'read_text', side_effect=['490000000', '536870912', 'inactive_file 0']):
             self.assertTrue(memory_pressure())
