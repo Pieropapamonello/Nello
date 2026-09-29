@@ -1573,8 +1573,10 @@ async def serve_audio(request):
 
 
 async def run_web():
+    from youtube_probe import probe as youtube_probe
     app = web.Application()
     app.add_routes([
+        web.get("/admin/youtube-probe", youtube_probe),
         web.get("/", health),
         web.get("/l/{tok}", serve_link),
         web.get("/p/{tok}", serve_play),
