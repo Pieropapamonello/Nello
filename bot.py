@@ -609,9 +609,9 @@ def note_download_success(platform: str):
 # =========================
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from telegram_admin import keyboard as admin_keyboard
+    from telegram_menu import main_keyboard
     logger.info(f"Received /start in chat {update.effective_chat.id} from {update.effective_user.id}")
-    await update.message.reply_text(
+    await update.effective_message.reply_text(
         "Ciao! Mandami un link da TikTok, Instagram, Facebook, YouTube Shorts, "
         "Twitter/X, Reddit o Twitch e penso io a tutto 🔥\n\n"
         "<b>Comandi:</b>\n"
@@ -623,7 +623,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /stats — le tue statistiche\n\n"
         f"Chat ID di questo gruppo: <code>{update.effective_chat.id}</code>",
         parse_mode=ParseMode.HTML,
-        reply_markup=admin_keyboard(update),
+        reply_markup=main_keyboard(update),
     )
 
 
@@ -641,17 +641,17 @@ async def _render_board(period: str, titolo: str, vuoto: str, update):
         board = await ranking_store.get_board(period, limit=10)
     except Exception as e:
         logger.warning(f"get_board fallito: {e}")
-        await update.message.reply_text("⚠️ Classifica non disponibile: il database non è raggiungibile.")
+        await update.effective_message.reply_text("⚠️ Classifica non disponibile: il database non è raggiungibile.")
         return
     if not board:
-        await update.message.reply_text(vuoto)
+        await update.effective_message.reply_text(vuoto)
         return
     text = f"{titolo}\n\n"
     for i, (user_id, count, name) in enumerate(board):
         badge = BADGES[i] if i < len(BADGES) else f"<b>{i + 1}.</b>"
         mention = f'<a href="tg://user?id={user_id}">{escape(name)}</a>'
         text += f"{badge} {mention} — <b>{count}</b>\n"
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML,
+    await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML,
                                     disable_web_page_preview=True)
 
 
@@ -681,7 +681,7 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         earned = await ranking_store.get_earned(u.id)
     except Exception as e:
         logger.warning(f"stats fallito: {e}")
-        await update.message.reply_text("⚠️ Statistiche non disponibili: il database non è raggiungibile.")
+        await update.effective_message.reply_text("⚠️ Statistiche non disponibili: il database non è raggiungibile.")
         return
     rank_txt = f"#{s['rank']} su {s['total_users']}" if s.get('rank') else "—"
     badges = " ".join(ACHIEVEMENTS.get(c, "🏅").split()[0] for c in earned) or "nessuno ancora"
@@ -696,7 +696,7 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🎖️ Achievement: {badges}\n\n"
         f"ℹ️ Usa /profilo per la card completa."
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
 async def profilo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -706,7 +706,7 @@ async def profilo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         p = await ranking_store.get_profile(u.id)
     except Exception as e:
         logger.warning(f"get_profile fallito: {e}")
-        await update.message.reply_text("⚠️ Profilo non disponibile: il database non è raggiungibile.")
+        await update.effective_message.reply_text("⚠️ Profilo non disponibile: il database non è raggiungibile.")
         return
 
     r_emoji, r_title = get_rank(p['alltime'])
@@ -738,7 +738,7 @@ async def profilo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🏅 Medaglie del pubblico: {medals}\n"
         f"🎖️ Achievement: {badges}"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
 async def votati_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -747,17 +747,17 @@ async def votati_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         board = await ranking_store.top_voted_week(limit=10)
     except Exception as e:
         logger.warning(f"top_voted_week fallito: {e}")
-        await update.message.reply_text("⚠️ Classifica voti non disponibile: database non raggiungibile.")
+        await update.effective_message.reply_text("⚠️ Classifica voti non disponibile: database non raggiungibile.")
         return
     if not board:
-        await update.message.reply_text("📭 Nessun voto questa settimana. Reagite ai video! 👍🔥")
+        await update.effective_message.reply_text("📭 Nessun voto questa settimana. Reagite ai video! 👍🔥")
         return
     text = "👍 <b>VIDEO PIÙ AMATI (settimana)</b>\n\n"
     for i, (user_id, count, name) in enumerate(board):
         badge = BADGES[i] if i < len(BADGES) else f"<b>{i + 1}.</b>"
         mention = f'<a href="tg://user?id={user_id}">{escape(name)}</a>'
         text += f"{badge} {mention} — <b>{count}</b> voti\n"
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+    await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 
 # =========================
@@ -1689,7 +1689,12 @@ def main():
     from telegram_admin import AdminUI
     admin_ui = AdminUI(ranking_store, whatsapp_command(effective_admin_id), chats_cmd)
     application.add_handler(CommandHandler("admin", admin_ui.command))
-    application.add_handler(CommandHandler("menu", admin_ui.command))
+    application.add_handler(CommandHandler("menu", start_cmd))
+    from telegram_menu import callback as menu_callback
+    application.add_handler(CallbackQueryHandler(menu_callback({
+        'home': start_cmd, 'classifica': classifica_cmd, 'votati': votati_cmd,
+        'mensile': mensile_cmd, 'record': record_cmd, 'profilo': profilo_cmd, 'stats': stats_cmd,
+    }), pattern=r"^menu:"))
     application.add_handler(CallbackQueryHandler(admin_ui.callback, pattern=r"^adm:"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_ui.capture), group=-2)
     from cookie_admin import CookieAdmin

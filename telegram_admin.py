@@ -59,11 +59,12 @@ def keyboard(update):
         return InlineKeyboardMarkup([[InlineKeyboardButton('Accedi come admin', callback_data='adm:login')]])
     return InlineKeyboardMarkup([
         [InlineKeyboardButton('Stato e aggiornamento cookie', callback_data='cookies:status')],
-        [InlineKeyboardButton('QR WhatsApp', callback_data='adm:qr')],
-        [InlineKeyboardButton('Collega WhatsApp con codice', callback_data='adm:code')],
+        [InlineKeyboardButton('Richiedi QR WhatsApp', callback_data='adm:qr')],
+        [InlineKeyboardButton('Richiedi codice WhatsApp', callback_data='adm:code')],
         [InlineKeyboardButton('Chat del bot', callback_data='adm:chats'),
          InlineKeyboardButton('Nuova sfida', callback_data='adm:challenge')],
         [InlineKeyboardButton('Esci da admin', callback_data='adm:logout')],
+        [InlineKeyboardButton('Menu principale', callback_data='menu:home')],
     ])
 
 
