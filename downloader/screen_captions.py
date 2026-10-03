@@ -120,8 +120,12 @@ def read_screen(source):
             for _, x1, y1, x2, y2, text in tsv_lines(ocr(sample, alternate_languages)):
                 if height * .02 < y1 < height * .98 and sum(c.isalpha() for c in text) >= 5:
                     alternate_samples.append((i, x1, y1, x2, y2, text))
+    # Italian headlines often span separate lines, each too short to be a band.
+    combined = ' '.join(dict.fromkeys(item[5] for item in samples))
+    if text_language(combined) == 'it':
+        return {'language': 'it'}
     band = verified_band(samples, height)
-    if not band and alternate_languages:
+    if not band and alternate_languages and not combined:
         band = verified_band(alternate_samples, height)
         languages = alternate_languages
     if not band:
