@@ -100,6 +100,8 @@ def download(url, cookies, directory, kind='video', max_duration=180):
                    'best[language^=it]/bestvideo+bestaudio[language^=it]/best[ext=mp4][acodec!=none]/bestvideo+bestaudio/best'),
         'format_sort': ['res:480'], 'outtmpl': str(directory / '%(id)s.%(ext)s'),
         'merge_output_format': 'mp4', 'noplaylist': True, 'max_filesize': MAX_BYTES,
+        # The free host has no IPv6 route to some Googlevideo CDN nodes.
+        'source_address': '0.0.0.0',
         'socket_timeout': 15, 'retries': 1, 'fragment_retries': 1,
         'concurrent_fragment_downloads': 1,
         'js_runtimes': {'node': {'path': shutil.which('node')}},

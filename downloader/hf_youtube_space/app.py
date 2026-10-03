@@ -100,8 +100,10 @@ async def extract(request: Request):
             code = code or ('http_' + status[1] if status else
                             'format_unavailable' if 'format' in message and 'available' in message else
                             'media_unavailable' if 'unavailable' in message else 'extractor_failure')
+            if 'network is unreachable' in message:
+                code = 'network_unreachable'
             return {'success': False, 'auth_issue': issue, 'error_code': code,
-                    'error': 'YouTube download unavailable'}
+                    'error_type': type(exc).__name__, 'error': 'YouTube download unavailable'}
 
 
 @app.get('/api/media/{ident}')

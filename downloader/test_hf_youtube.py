@@ -33,6 +33,7 @@ class Guards(unittest.TestCase):
             self.assertTrue(result['skip_long'])
             self.assertIsNone(path)
             ydl.process_ie_result.assert_not_called()
+            self.assertEqual(mock.call_args.args[0]['source_address'], '0.0.0.0')
             self.assertFalse((Path(directory) / 'cookies.txt').exists())
 
     def test_wrong_identity_unknown_duration_and_live_are_rejected(self):
