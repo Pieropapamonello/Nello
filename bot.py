@@ -1726,6 +1726,8 @@ def main():
     application.add_handler(CommandHandler("profilo", profilo_cmd))
     application.add_handler(CommandHandler("votati", votati_cmd))
     application.add_handler(CommandHandler("admin", admin_cmd))
+    from wa_qr import command as whatsapp_command
+    application.add_handler(CommandHandler("whatsapp", whatsapp_command(effective_admin_id)))
     from cookie_admin import CookieAdmin
     cookie_admin = CookieAdmin(effective_admin_id, ranking_store)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, cookie_admin.capture_text), group=-1)

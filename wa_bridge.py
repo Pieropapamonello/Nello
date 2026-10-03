@@ -56,6 +56,20 @@ def build_app(ns):
         + dl.base_opts['format'])
     rs = ns.ranking_store
     group_lock = asyncio.Lock()
+    from wa_qr import WhatsAppQR
+    pairing = WhatsAppQR(ns)
+
+    async def whatsapp_qr(request):
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError()
+        except Exception:
+            raise web.HTTPBadRequest()
+        return web.json_response(await pairing.update(body))
+
+    async def whatsapp_qr_resend(request):
+        return web.json_response(await pairing.resend())
 
     def quote():
         return random.choice(getattr(ns, 'aforismi', None) or ['Condividere rende tutto piu bello.'])
@@ -287,6 +301,8 @@ def build_app(ns):
         web.post('/weekly-rankings', weekly_rankings),
         web.post('/ranking-ack', ranking_ack),
         web.post('/notify', notify),
+        web.post('/whatsapp-qr', whatsapp_qr),
+        web.post('/whatsapp-qr/resend', whatsapp_qr_resend),
         web.post('/download', download),
         web.post('/sent', sent),
         web.post('/react', react),

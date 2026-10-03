@@ -6,8 +6,8 @@
 // downloader e lo store esistenti. Voti via reazioni native di WhatsApp.
 //
 // La sessione (credenziali) viene salvata sul bridge -> Firestore, così non serve
-// riscansionare il QR a ogni deploy. Il QR per il PRIMO collegamento viene stampato
-// nei log: scansionalo da WhatsApp -> Dispositivi collegati.
+// riscansionare il QR a ogni deploy. I QR vengono inviati in privato all'admin
+// Telegram tramite il bridge, senza pubblicare le credenziali nei log.
 //
 // Avviato da start.sh solo se WHATSAPP_ENABLED=1.
 
@@ -23,7 +23,6 @@ const {
   normalizeMessageContent,
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const qrcode = require('qrcode-terminal');
 const { transcribeVoice, createVoiceReply } = require('./voice_bridge');
 
 const BRIDGE = process.env.WA_BRIDGE_URL || 'http://127.0.0.1:8765';
@@ -48,6 +47,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function bridge(path, opts) {
   const res = await fetch(BRIDGE + path, opts);
   return res.json();
+}
+
+// Preserve QR/close/open order even while Telegram is uploading an image.
+let pairingUpdates = Promise.resolve();
+function updatePairing(body) {
+  pairingUpdates = pairingUpdates.then(() => bridge('/whatsapp-qr', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30000),
+  })).catch(() => console.log('WA: aggiornamento collegamento Telegram non riuscito.'));
 }
 
 // Cancella la sessione salvata (Firestore). Serve quando WhatsApp revoca il device
@@ -339,20 +348,19 @@ async function start() {
   sock.ev.on('connection.update', (u) => {
     const { connection, lastDisconnect, qr } = u;
     if (qr) {
-      console.log('\n================ WHATSAPP QR ================');
-      console.log('Apri WhatsApp -> Dispositivi collegati -> Collega un dispositivo e scansiona:');
-      qrcode.generate(qr, { small: true });
-      console.log('WA_QR_RAW:' + qr);
-      console.log('============================================\n');
+      console.log('WA: nuovo QR disponibile, invio privato all’admin Telegram.');
+      updatePairing({ qr });
     }
     if (connection === 'open') {
       connected = true;
+      updatePairing({ connected: true });
       if (rankingTimer) clearInterval(rankingTimer);
       rankingTimer = setInterval(pollRankings, 60000);
       pollRankings();
       console.log('WA: connesso a WhatsApp ✅');
     } else if (connection === 'close') {
       connected = false;
+      updatePairing({ connected: false });
       if (rankingTimer) clearInterval(rankingTimer);
       rankingTimer = null;
       const code = lastDisconnect && lastDisconnect.error
@@ -368,8 +376,7 @@ async function start() {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             text: '⚠️ <b>WhatsApp scollegato</b>\nNello è stato sganciato da WhatsApp (logout). '
-              + 'Per riattivarlo riscansiona il QR dai log di Render:\n'
-              + 'https://dashboard.render.com/web/srv-d4dkrok9c44c739eqsc0/logs\n\n'
+              + 'Riceverai qui il nuovo QR. Puoi richiederlo anche con /whatsapp.\n\n'
               + '📱 WhatsApp → Dispositivi collegati → Collega un dispositivo → inquadra il QR.',
           }),
         }).catch(() => {});

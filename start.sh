@@ -21,13 +21,13 @@ else
 fi
 
 # Worker WhatsApp (Baileys): avviato solo se WHATSAPP_ENABLED=1. Aspetta da solo
-# che il bridge Python sia pronto (vedi wa_worker.js). Il QR del primo
-# collegamento comparira' in questi log.
+# che il bridge Python sia pronto (vedi wa_worker.js). Il QR viene inviato
+# in privato all'admin Telegram tramite il bridge.
 if [ "$WHATSAPP_ENABLED" = "1" ]; then
     if [ -f "/app/wa/wa_worker.js" ]; then
         node --max-old-space-size="$WA_NODE_MAX_OLD_SPACE_SIZE" /app/wa/wa_worker.js >/tmp/wa_worker.log 2>&1 &
         echo "worker WhatsApp avviato (pid $!) - log: /tmp/wa_worker.log"
-        # mostra i log del worker (incluso il QR) nello stream principale
+        # mostra lo stato del worker nello stream principale
         ( tail -n +1 -F /tmp/wa_worker.log & ) 2>/dev/null
     else
         echo "ATTENZIONE: /app/wa/wa_worker.js non trovato, worker WhatsApp non avviato"
