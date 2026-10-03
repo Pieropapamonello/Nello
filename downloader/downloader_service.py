@@ -206,13 +206,8 @@ def build_app(token=None, downloader_factory=None):
                     paths = ([result['file_path']] if result.get('file_path') else result.get('files', []))
                     subtitle_meta = result.pop('_subtitle_meta', None)
                     subtitle_path = None
-                    already_italian = False
-                    if subtitle_meta and body.get('subtitles', True) and subtitle_meta.get('tracks', {}).get('it'):
-                        # Prefer existing Italian captions over OCR or retranslation.
-                        native_meta = dict(subtitle_meta, language='it')
-                        subtitle_path = await asyncio.to_thread(prepare_subtitles, native_meta, directory.name)
-                    if subtitle_meta and subtitle_meta.get('language') == 'it':
-                        already_italian = True
+                    # Spoken Italian needs no subtitles, even when native tracks exist.
+                    already_italian = bool(subtitle_meta and subtitle_meta.get('language') == 'it')
                     if (body.get('subtitles', True) and result.get('type') == 'video'
                             and body.get('kind') != 'audio' and len(paths) == 1 and downloader_factory is None
                             and not subtitle_path and not already_italian):

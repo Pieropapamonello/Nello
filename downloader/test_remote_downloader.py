@@ -82,6 +82,29 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
         finally:
             path.unlink()
 
+    async def test_italian_audio_with_native_captions_skips_subtitle_processing(self):
+        class ItalianDownloader(FakeDownloader):
+            async def download_video(self, url):
+                result = await super().download_video(url)
+                result['_subtitle_meta'] = {'language': 'it', 'duration': 143,
+                                            'tracks': {'it': [{'data': 'native captions'}]}}
+                return result
+        await self.client.close()
+        self.client = TestClient(TestServer(build_app(TOKEN, ItalianDownloader)))
+        await self.client.start_server()
+        with patch('downloader_service.prepare_subtitles') as captions, \
+             patch('downloader_service.prepare_screen_subtitles') as screen, \
+             patch('downloader_service.prepare_spoken_subtitles') as speech, \
+             patch('downloader_service.prepare_video') as encode, \
+             patch.dict(os.environ, {'DOWNLOADER_URL': str(self.client.make_url('')).rstrip('/'),
+                                    'DOWNLOADER_TOKEN': TOKEN}):
+            result = await remote_download('https://youtu.be/0m1xEHs71qI')
+        self.assertTrue(result['success'], result)
+        self.assertEqual(result['subtitles'], 'already_it')
+        for operation in (captions, screen, speech, encode):
+            operation.assert_not_called()
+        Path(result['file_path']).unlink()
+
     async def test_failed_optional_subtitles_still_deliver_original_video(self):
         await self.client.close()
         self.client = TestClient(TestServer(build_app(TOKEN, SubtitleDownloader)))
