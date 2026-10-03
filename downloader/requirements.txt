@@ -1,0 +1,11 @@
+requests==2.31.0
+aiohttp>=3.9.0
+cloudscraper
+curl_cffi==0.13.0
+git+https://github.com/yt-dlp/yt-dlp.git@master
+bgutil-ytdlp-pot-provider==2.0.0
+yt-dlp-ejs
+ctranslate2==4.6.0
+sentencepiece==0.2.1
+Pillow==12.3.0
+langid==1.1.6

@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: nello-downloader
+    runtime: docker
+    repo: https://github.com/Pieropapamonello/Nello-downloader
+    branch: main
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      - key: DOWNLOADER_TOKEN
+        generateValue: true
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: COOKIE_RENDER_API_KEY
+        sync: false

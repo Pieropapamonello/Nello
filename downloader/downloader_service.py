@@ -1,0 +1,329 @@
+"""Authenticated media job service. No bot sessions or database credentials."""
+import asyncio
+import hmac
+import logging
+import os
+from pathlib import Path
+import tempfile
+import time
+import uuid
+from urllib.parse import urlsplit
+
+from aiohttp import web, ClientSession, ClientTimeout
+from cookie_health import (PLATFORMS, MAX_COOKIE_BYTES, read_content, inspect_content,
+                           validate_upload, install_live, platform_for_url, ISSUE_PRIORITY)
+from media_worker import run_media_job
+from wa_media import prepare_video
+from subtitles import prepare_subtitles
+from speech_subtitles import prepare_spoken_subtitles
+from screen_captions import prepare_screen_subtitles
+from voice_transcription import run_voice_job, MAX_BYTES as MAX_VOICE_BYTES
+VIDEO_EXTS = ('.mp4', '.mov', '.webm', '.mkv', '.avi', '.flv', '.ts')
+
+log = logging.getLogger(__name__)
+DOMAINS = ('youtube.com', 'youtu.be', 'facebook.com', 'fb.watch', 'tiktok.com',
+           'instagram.com', 'twitter.com', 'x.com', 'reddit.com', 'redd.it', 'twitch.tv')
+
+
+def build_app(token=None, downloader_factory=None):
+    token = token or os.environ.get('DOWNLOADER_TOKEN', '')
+    if len(token) < 32:
+        raise ValueError('DOWNLOADER_TOKEN must contain at least 32 characters')
+    jobs = {}
+    queue = asyncio.Queue(maxsize=8)
+    auth_issues = {}
+    cookie_lock = asyncio.Lock()
+
+    async def cookie_status(request):
+        statuses = {}
+        for platform in PLATFORMS:
+            item = inspect_content(read_content(platform), platform)
+            issue = auth_issues.get(platform)
+            if issue and issue['version'] == item['version']:
+                item['issue'] = issue['reason']
+            statuses[platform] = item
+        return web.json_response({'platforms': statuses})
+
+    async def update_cookie(request):
+        platform = request.match_info['platform']
+        if platform not in PLATFORMS:
+            raise web.HTTPNotFound()
+        try:
+            body = await request.json()
+            content = validate_upload(body.get('content'), platform)
+        except (ValueError, AttributeError, TypeError):
+            return web.json_response({'error': 'File non valido, piattaforma errata o sessione assente/scaduta. Esporta cookie Netscape dopo il login.'}, status=400)
+        key = os.getenv('COOKIE_RENDER_API_KEY')
+        service = os.getenv('RENDER_SERVICE_ID')
+        if not key or not service:
+            return web.json_response({'error': 'Salvataggio persistente del downloader non configurato.'}, status=503)
+        async with cookie_lock:
+            try:
+                async with ClientSession(timeout=ClientTimeout(total=30)) as session:
+                    async with session.put(
+                        f'https://api.render.com/v1/services/{service}/secret-files/{platform.upper()}_COOKIES',
+                        headers={'Authorization': 'Bearer ' + key}, json={'content': content}
+                    ) as response:
+                        if response.status not in (200, 201, 204):
+                            log.warning('Cookie persistence failed: platform=%s status=%s', platform, response.status)
+                            return web.json_response({'error': 'Render non ha salvato i cookie. Riprova; se persiste, verifica la chiave API Render.'}, status=502)
+                install_live(platform, content)
+                auth_issues.pop(platform, None)
+            except Exception as exc:
+                log.warning('Cookie update failed: platform=%s type=%s', platform, type(exc).__name__)
+                return web.json_response({'error': 'Aggiornamento non confermato. Riprova.'}, status=502)
+        return web.json_response({'ok': True, 'persistent': True})
+
+    @web.middleware
+    async def authenticate(request, handler):
+        if request.path != '/healthz' and not hmac.compare_digest(
+                request.headers.get('Authorization', ''), 'Bearer ' + token):
+            raise web.HTTPUnauthorized()
+        return await handler(request)
+
+    async def submit(request):
+        body = await request.json()
+        url = body.get('url', '')
+        try:
+            parsed = urlsplit(url)
+            host = (parsed.hostname or '').lower()
+            valid = (parsed.scheme in ('http', 'https') and not parsed.username
+                     and parsed.port in (None, 80, 443)
+                     and any(host == d or host.endswith('.' + d) for d in DOMAINS))
+            ident = str(uuid.UUID(body.get('id', '')))
+        except (ValueError, TypeError, AttributeError):
+            valid = False
+        if not valid or body.get('kind', 'video') not in ('video', 'audio'):
+            raise web.HTTPBadRequest()
+        if ident in jobs:
+            return web.json_response({'id': ident}, status=202)
+        if queue.full() or len(jobs) >= 32:
+            raise web.HTTPServiceUnavailable(text='job queue full')
+        jobs[ident] = {'state': 'queued', 'body': body, 'created': time.monotonic()}
+        queue.put_nowait(ident)
+        return web.json_response({'id': ident}, status=202)
+
+    async def status(request):
+        job = jobs.get(request.match_info['ident'])
+        if not job:
+            raise web.HTTPNotFound()
+        return web.json_response({k: job[k] for k in ('state', 'result', 'progress') if k in job})
+
+    async def submit_voice(request):
+        caption_upload = request.path.startswith('/subtitle-jobs/')
+        upload_limit = 20 * 1024 * 1024 if caption_upload else MAX_VOICE_BYTES
+        try:
+            ident = str(uuid.UUID(request.match_info['ident']))
+        except ValueError:
+            raise web.HTTPBadRequest()
+        if ident in jobs:
+            return web.json_response({'id': ident}, status=202)
+        if queue.full() or len(jobs) >= 32:
+            raise web.HTTPServiceUnavailable()
+        directory = tempfile.TemporaryDirectory(prefix='voice_job_')
+        job = {'state': 'uploading', 'body': {'kind': 'caption_upload' if caption_upload else 'voice', 'url': '', 'target': 'whatsapp'},
+               'created': time.monotonic(), 'directory': directory, 'paths': []}
+        jobs[ident] = job
+        try:
+            size = 0
+            with open(os.path.join(directory.name, 'input.mp4' if caption_upload else 'input.audio'), 'wb') as output:
+                async with asyncio.timeout(60):
+                    async for chunk in request.content.iter_chunked(65536):
+                        size += len(chunk)
+                        if size > upload_limit:
+                            raise web.HTTPRequestEntityTooLarge(max_size=upload_limit, actual_size=size)
+                        output.write(chunk)
+            if not size:
+                raise web.HTTPBadRequest()
+            if caption_upload:
+                with open(os.path.join(directory.name, 'input.mp4'), 'rb') as uploaded:
+                    if uploaded.read(8)[4:8] != b'ftyp':
+                        raise web.HTTPBadRequest(text='MP4 upload required')
+            if queue.full():
+                raise web.HTTPServiceUnavailable()
+            job['state'] = 'queued'
+            queue.put_nowait(ident)
+        except BaseException:
+            jobs.pop(ident, None)
+            directory.cleanup()
+            raise
+        return web.json_response({'id': ident}, status=202)
+
+    async def media(request):
+        job = jobs.get(request.match_info['ident'])
+        try:
+            index = int(request.match_info['index'])
+            if not job or job['state'] != 'done' or index < 0:
+                raise ValueError()
+            path = job['paths'][index]
+        except (KeyError, IndexError, ValueError):
+            raise web.HTTPNotFound()
+        return web.FileResponse(path)
+
+    async def remove(request):
+        ident = request.match_info['ident']
+        job = jobs.get(ident)
+        if job and job['state'] == 'done':
+            jobs.pop(ident)
+            job['directory'].cleanup()
+        return web.json_response({'ok': True})
+
+    async def worker():
+        while True:
+            ident = await queue.get()
+            job = jobs[ident]
+            body = job['body']
+            job['state'] = 'running'
+            directory = job.get('directory') or tempfile.TemporaryDirectory(prefix='media_job_')
+            job['directory'] = directory
+            job['paths'] = []
+            platform = platform_for_url(body['url'])
+            cookie_version = inspect_content(read_content(platform), platform)['version'] if platform else None
+            try:
+                if body.get('kind') == 'voice':
+                    try:
+                        loop = asyncio.get_running_loop()
+                        def progress(value, current_job=job):
+                            if value.get('language') == 'it':
+                                loop.call_soon_threadsafe(current_job.__setitem__, 'progress', value)
+                        job['result'] = await asyncio.to_thread(run_voice_job, os.path.join(directory.name, 'input.audio'), on_progress=progress)
+                    finally:
+                        directory.cleanup()
+                    continue
+                target = body.get('target', '')
+                if body.get('kind') == 'caption_upload':
+                    result = {'success': True, 'type': 'video', 'file_path': os.path.join(directory.name, 'input.mp4')}
+                elif downloader_factory is None:
+                    result = await asyncio.to_thread(run_media_job, body, directory.name)
+                else:
+                    # Injected downloader for API contract tests.
+                    dl = downloader_factory()
+                    dl.temp_dir = directory.name
+                    dl.base_opts['outtmpl'] = os.path.join(directory.name, '%(id)s.%(ext)s')
+                    result = await (dl.download_audio(body['url']) if body.get('kind') == 'audio'
+                                    else dl.download_video(body['url']))
+                if result.get('success'):
+                    paths = ([result['file_path']] if result.get('file_path') else result.get('files', []))
+                    subtitle_meta = result.pop('_subtitle_meta', None)
+                    subtitle_path = None
+                    already_italian = False
+                    if subtitle_meta and body.get('subtitles', True) and subtitle_meta.get('tracks', {}).get('it'):
+                        # Prefer existing Italian captions over OCR or retranslation.
+                        native_meta = dict(subtitle_meta, language='it')
+                        subtitle_path = await asyncio.to_thread(prepare_subtitles, native_meta, directory.name)
+                    if subtitle_meta and subtitle_meta.get('language') == 'it':
+                        already_italian = True
+                    if (body.get('subtitles', True) and result.get('type') == 'video'
+                            and body.get('kind') != 'audio' and len(paths) == 1 and downloader_factory is None
+                            and not subtitle_path and not already_italian):
+                        source = Path(paths[0]).resolve()
+                        if not source.is_relative_to(Path(directory.name).resolve()):
+                            raise ValueError('media outside job directory')
+                        subtitle_path, already_italian = await asyncio.to_thread(prepare_screen_subtitles, str(source), directory.name)
+                    if subtitle_meta and body.get('subtitles', True) and not subtitle_path and not already_italian:
+                        try:
+                            source = paths[0] if len(paths) == 1 else None
+                            subtitle_path = await asyncio.to_thread(prepare_subtitles, subtitle_meta, directory.name, source=source)
+                        except Exception as exc:
+                            log.info('Optional subtitles skipped: %s', type(exc).__name__)
+                    result['subtitles'] = 'already_it' if already_italian else ('unavailable' if not subtitle_path else 'pending')
+                    paths = ([result['file_path']] if result.get('file_path') else result.get('files', []))
+                    if (body.get('subtitles', True) and not subtitle_path and not already_italian and result.get('type') == 'video' and body.get('kind') != 'audio'
+                            and len(paths) == 1 and Path(paths[0]).suffix.lower() in VIDEO_EXTS
+                            and downloader_factory is None):
+                        source = Path(paths[0]).resolve()
+                        if not source.is_relative_to(Path(directory.name).resolve()):
+                            raise ValueError('media outside job directory')
+                        try:
+                            subtitle_path = await asyncio.to_thread(prepare_spoken_subtitles, str(source), directory.name)
+                        except Exception as exc:
+                            log.info('Optional speech subtitles skipped: %s', type(exc).__name__)
+                    descriptors = []
+                    for path in paths:
+                        path = str(Path(path).resolve())
+                        if not Path(path).is_relative_to(Path(directory.name).resolve()):
+                            raise ValueError('media outside job directory')
+                        document = False
+                        is_video = Path(path).suffix.lower() in VIDEO_EXTS
+                        if subtitle_path and is_video and len(paths) == 1:
+                            limit = min(max(int(body.get('max_bytes', 16 * 1024 * 1024)), 1024 * 1024), 50 * 1024 * 1024)
+                            try:
+                                converted = await asyncio.to_thread(prepare_video, path, max_bytes=limit,
+                                                                   timeout=150, subtitle_path=subtitle_path)
+                                os.remove(path)
+                                path = converted
+                                result['subtitles'] = 'burned_it'
+                            except Exception as exc:
+                                result['subtitles'] = 'skipped_resource_or_encoding'
+                                log.info('Optional subtitle encode skipped: %s', type(exc).__name__)
+                        if target in ('whatsapp', 'discord') and is_video and result['subtitles'] != 'burned_it':
+                            limit = min(int(body.get('max_bytes', 16 * 1024 * 1024)), 50 * 1024 * 1024)
+                            if limit < 1024 * 1024:
+                                raise ValueError('invalid size limit')
+                            try:
+                                converted = await asyncio.to_thread(prepare_video, path, max_bytes=limit, timeout=300)
+                                os.remove(path)
+                                path = converted
+                            except Exception as exc:
+                                log.warning('Remote preparation failed: %s', type(exc).__name__)
+                                if target == 'discord' and os.path.getsize(path) > limit:
+                                    raise ValueError('discord_video_exceeds_upload_limit') from exc
+                                document = target == 'whatsapp'
+                        if os.path.getsize(path) > 100 * 1024 * 1024:
+                            raise ValueError('media too large')
+                        job['paths'].append(path)
+                        descriptors.append({'index': len(descriptors), 'suffix': Path(path).suffix,
+                                            'size': os.path.getsize(path), 'document': document})
+                    result.pop('file_path', None)
+                    result.pop('files', None)
+                    result['media'] = descriptors
+                    result['video_processing_version'] = 8
+                    result['_delivery_prepared'] = target in ('whatsapp', 'discord')
+                job['result'] = result
+                if platform and cookie_version == inspect_content(read_content(platform), platform)['version']:
+                    if result.get('success'):
+                        auth_issues.pop(platform, None)
+                    elif result.get('auth_issue') in ISSUE_PRIORITY:
+                        auth_issues[platform] = {'version': cookie_version, 'reason': result['auth_issue']}
+                log.info('Job %s complete: success=%s subtitles=%s url=%s', ident, result.get('success'), result.get('subtitles'), body['url'])
+            except Exception as exc:
+                log.exception('Job %s failed', ident)
+                job['result'] = {'success': False, 'error': type(exc).__name__}
+            finally:
+                job['state'] = 'done'
+                job['finished'] = time.monotonic()
+                queue.task_done()
+
+    async def lifecycle(app):
+        async def expire():
+            while True:
+                await asyncio.sleep(60)
+                for ident, job in list(jobs.items()):
+                    if job['state'] == 'done' and time.monotonic() - job['finished'] > 1200:
+                        jobs.pop(ident)
+                        job['directory'].cleanup()
+        tasks = [asyncio.create_task(worker()), asyncio.create_task(expire())]
+        yield
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    app = web.Application(middlewares=[authenticate], client_max_size=MAX_COOKIE_BYTES * 2)
+    async def health(request):
+        return web.json_response({'status': 'ok', 'queued': queue.qsize()})
+    app.add_routes([web.get('/healthz', health), web.post('/jobs', submit),
+                    web.post('/voice-jobs/{ident}', submit_voice),
+                    web.post('/subtitle-jobs/{ident}', submit_voice),
+                    web.get('/admin/cookies', cookie_status),
+                    web.put('/admin/cookies/{platform}', update_cookie),
+                    web.get('/jobs/{ident}', status), web.delete('/jobs/{ident}', remove),
+                    web.get('/jobs/{ident}/files/{index}', media)])
+    app.cleanup_ctx.append(lifecycle)
+    return app
+
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
+    # Avoid recursion if an environment is accidentally copied from the bot.
+    os.environ.pop('DOWNLOADER_URL', None)
+    web.run_app(build_app(), host='0.0.0.0', port=int(os.getenv('PORT', '10000')))
