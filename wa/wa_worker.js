@@ -21,9 +21,11 @@ const {
   fetchLatestBaileysVersion,
   downloadMediaMessage,
   normalizeMessageContent,
+  generateWAMessageFromContent,
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const { transcribeVoice, createVoiceReply } = require('./voice_bridge');
+const { adminRequest, sendAdminMenu } = require('./admin_menu');
 
 const BRIDGE = process.env.WA_BRIDGE_URL || 'http://127.0.0.1:8765';
 const logger = pino({ level: process.env.WA_LOG_LEVEL || 'warn' });
@@ -152,6 +154,16 @@ async function handleMessages(sock, upsert) {
       if (!jid || jid === 'status@broadcast') continue;
 
       const content = normalizeMessageContent(m.message);
+      const adminInput = adminRequest(content);
+      if (adminInput) {
+        const result = await bridge('/admin/command', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ...adminInput, jid, sender: m.key.participant || jid }),
+          signal: AbortSignal.timeout(30000),
+        });
+        await sendAdminMenu(sock, jid, result, generateWAMessageFromContent);
+        continue;
+      }
       const audio = content && content.audioMessage;
       if (audio) {
         if (Number(audio.seconds || 0) > 180 || Number(audio.fileLength || 0) > 8 * 1024 * 1024) continue;

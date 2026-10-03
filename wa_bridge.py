@@ -58,6 +58,17 @@ def build_app(ns):
     group_lock = asyncio.Lock()
     from wa_qr import WhatsAppQR
     pairing = WhatsAppQR(ns)
+    from wa_admin import WhatsAppAdmin
+    admin_controls = WhatsAppAdmin(rs)
+
+    async def admin_command(request):
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError()
+        except Exception:
+            raise web.HTTPBadRequest()
+        return web.json_response(await admin_controls.handle(body))
 
     async def whatsapp_qr(request):
         try:
@@ -301,6 +312,7 @@ def build_app(ns):
         web.post('/weekly-rankings', weekly_rankings),
         web.post('/ranking-ack', ranking_ack),
         web.post('/notify', notify),
+        web.post('/admin/command', admin_command),
         web.post('/whatsapp-qr', whatsapp_qr),
         web.post('/whatsapp-qr/resend', whatsapp_qr_resend),
         web.post('/download', download),
