@@ -966,6 +966,16 @@ class SocialMediaDownloader(TikTokMixin, InstagramMixin, FacebookMixin, CobaltMi
             if photo_id(clean_url):
                 return await download_photo(self, clean_url)
         if platform == 'youtube':
+            if os.getenv('HF_YOUTUBE_URL'):
+                from hf_youtube import download_youtube
+                result = await download_youtube(clean_url, self.temp_dir,
+                                                max_duration=self.youtube_max_duration)
+                self._subtitle_source_info = result.pop('source_info', {})
+                if result.get('success') and on_download_ready:
+                    callback_result = on_download_ready()
+                    if asyncio.iscoroutine(callback_result):
+                        await callback_result
+                return result
             duration = await asyncio.to_thread(youtube_duration, clean_url,
                                               getattr(self, 'youtube_cookies', None),
                                               getattr(self, 'proxy_dict', None))
@@ -1221,6 +1231,12 @@ class SocialMediaDownloader(TikTokMixin, InstagramMixin, FacebookMixin, CobaltMi
         """Estrae l'audio (MP3) dal contenuto. Usato dal bottone 'Audio'."""
         clean_url = self.clean_url(url)
         if self.detect_platform(clean_url) == 'youtube':
+            if os.getenv('HF_YOUTUBE_URL'):
+                from hf_youtube import download_youtube
+                result = await download_youtube(clean_url, self.temp_dir, kind='audio',
+                                                max_duration=self.youtube_max_duration)
+                result.pop('source_info', None)
+                return result
             duration = await asyncio.to_thread(youtube_duration, clean_url,
                                               getattr(self, 'youtube_cookies', None),
                                               getattr(self, 'proxy_dict', None))

@@ -1,0 +1,7 @@
+gradio==5.49.1
+requests==2.32.5
+git+https://github.com/yt-dlp/yt-dlp.git@master
+yt-dlp-ejs
+nodejs-wheel==22.20.0
+bgutil-ytdlp-pot-provider==2.0.0
+curl_cffi==0.13.0
