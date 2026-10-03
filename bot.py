@@ -229,8 +229,7 @@ def build_cache_payload(captured: list, platform: str, title: str, video_process
 async def resend_from_cache(context, msg, cached: dict, url: str) -> bool:
     """Rinvia un media gia' caricato usando il file_id (nessun download). True se riuscito."""
     photo = cached.get('kind') in ('photo', 'carousel')
-    required_video_version = 9 if cached.get('platform') == 'youtube' else 8
-    if cached.get('kind') == 'video' and cached.get('video_processing_version') != required_video_version:
+    if cached.get('kind') == 'video' and cached.get('video_processing_version') != 8:
         return False  # Reprocess pre-subtitle videos once.
     if (cached.get('kind') == 'video' and cached.get('subtitles') not in ('burned_it', 'already_it')
             and datetime.now().timestamp() - float(cached.get('subtitles_checked_at') or 0) > 3600):
