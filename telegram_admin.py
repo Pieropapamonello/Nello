@@ -3,6 +3,7 @@ import hmac
 import os
 import threading
 import time
+import aiohttp
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationHandlerStop
@@ -59,6 +60,7 @@ def keyboard(update):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton('Stato e aggiornamento cookie', callback_data='cookies:status')],
         [InlineKeyboardButton('QR WhatsApp', callback_data='adm:qr')],
+        [InlineKeyboardButton('Collega WhatsApp con codice', callback_data='adm:code')],
         [InlineKeyboardButton('Chat del bot', callback_data='adm:chats'),
          InlineKeyboardButton('Nuova sfida', callback_data='adm:challenge')],
         [InlineKeyboardButton('Esci da admin', callback_data='adm:logout')],
@@ -68,6 +70,41 @@ def keyboard(update):
 class AdminUI:
     def __init__(self, store, qr_command, chats_command):
         self.store, self.qr_command, self.chats_command = store, qr_command, chats_command
+        self.code_pending = {}
+
+    async def pairing_code(self, update, phone):
+        user = update.effective_user.id
+        if session.current() != user:
+            await update.effective_message.reply_text('Accedi prima come admin.')
+            return
+        if os.getenv('WHATSAPP_ENABLED') != '1':
+            await update.effective_message.reply_text('WhatsApp non è attivo sul bot.')
+            return
+        try:
+            port = int(os.getenv('WA_BRIDGE_PORT', '8765'))
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=80)) as client:
+                async with client.post(f'http://127.0.0.1:{port}/pairing/request',
+                                       json={'admin': user, 'phone': phone}) as response:
+                    result = await response.json()
+            if session.current() != user:
+                return
+            if result.get('ok'):
+                code = result['code']
+                await update.effective_message.reply_text(
+                    'Codice di collegamento WhatsApp:\n\n' + code[:4] + '-' + code[4:] + '\n\n'
+                    'Apri WhatsApp sul telefono del numero indicato → Dispositivi collegati → '
+                    'Collega un dispositivo → Collega con numero di telefono.\n'
+                    'Inserisci questi 8 caratteri. Se il codice scade, richiedine uno nuovo.')
+            else:
+                messages = {'connected': 'WhatsApp è già collegato: non serve un nuovo codice.',
+                            'not_admin': 'La sessione admin è scaduta. Accedi nuovamente.',
+                            'busy': 'È già in corso una richiesta di codice. Attendi.',
+                            'invalid_phone': 'Numero non valido. Inserisci il prefisso internazionale.',
+                            'timeout': 'WhatsApp non ha generato il codice in tempo. Riprova tra poco.'}
+                await update.effective_message.reply_text(messages.get(result.get('reason'),
+                    'Non riesco a generare il codice. Riprova tra poco oppure usa il QR.'))
+        except (aiohttp.ClientError, TimeoutError, ValueError, KeyError):
+            await update.effective_message.reply_text('Servizio WhatsApp momentaneamente non disponibile. Riprova tra poco.')
 
     async def login(self, update, context, password):
         user = update.effective_user.id
@@ -110,6 +147,25 @@ class AdminUI:
         if update.effective_chat.type != 'private':
             return
         user = update.effective_user.id
+        if self.code_pending.get(user, 0) > time.monotonic():
+            if session.current() != user:
+                self.code_pending.pop(user, None)
+                await update.effective_message.reply_text('Accedi nuovamente come admin.')
+                raise ApplicationHandlerStop
+            from wa_pairing import phone_number
+            try:
+                phone = phone_number((update.effective_message.text or '').strip())
+            except ValueError:
+                await update.effective_message.reply_text('Invia il numero completo con prefisso internazionale, per esempio +39 seguito dal numero.')
+                raise ApplicationHandlerStop
+            self.code_pending.pop(user, None)
+            try:
+                await update.effective_message.delete()
+            except Exception:
+                pass
+            await self.pairing_code(update, phone)
+            raise ApplicationHandlerStop
+        self.code_pending.pop(user, None)
         expires = session.pending.pop(user, 0)
         if expires <= time.monotonic():
             return
@@ -138,11 +194,18 @@ class AdminUI:
             return
         await query.answer()
         if action == 'logout':
+            self.code_pending.pop(update.effective_user.id, None)
             session.logout(update.effective_user.id)
             await query.edit_message_reply_markup(reply_markup=keyboard(update))
             await update.effective_message.reply_text('Sei uscito da admin. Non riceverai nuovi QR.')
         elif action == 'qr':
             await self.qr_command(update, context)
+        elif action == 'code':
+            self.code_pending[update.effective_user.id] = time.monotonic() + 180
+            await update.effective_message.reply_text(
+                'Invia il numero WhatsApp usato dal bot, completo di prefisso internazionale '
+                '(per esempio +39 seguito dal numero). Hai 3 minuti.\n'
+                'Devi poter aprire WhatsApp sul telefono di quel numero per confermare il collegamento.')
         elif action == 'chats':
             await self.chats_command(update, context)
         elif action == 'challenge':

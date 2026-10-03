@@ -51,6 +51,25 @@ class LoginTests(unittest.IsolatedAsyncioTestCase):
         qr.assert_not_awaited()
         chats.assert_not_awaited()
 
+    async def test_code_button_requires_login_and_collects_phone_only_when_authenticated(self):
+        session.logout(session.user)
+        ui = AdminUI(None, AsyncMock(), AsyncMock())
+        query = SimpleNamespace(data='adm:code', answer=AsyncMock(), edit_message_reply_markup=AsyncMock())
+        update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_chat=SimpleNamespace(type='private'),
+                                 callback_query=query, effective_message=SimpleNamespace(reply_text=AsyncMock()))
+        await ui.callback(update, None)
+        self.assertFalse(ui.code_pending)
+        with patch.dict('os.environ', {'ADMIN_PASSWORD': 'test-password'}):
+            session.authenticate(123, 'test-password')
+            await ui.callback(update, None)
+            self.assertGreater(ui.code_pending[123], time.monotonic())
+            session.logout(123)
+            update.effective_message.text = '+393331234567'
+            from telegram.ext import ApplicationHandlerStop
+            with self.assertRaises(ApplicationHandlerStop):
+                await ui.capture(update, None)
+            self.assertFalse(ui.code_pending)
+
 
 if __name__ == '__main__':
     unittest.main()

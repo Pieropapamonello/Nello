@@ -27,3 +27,15 @@ Il menu permette anche di uscire: dopo logout, scadenza o riavvio del bot
 non verranno inviati altri QR finché non accedi nuovamente.
 Il comando `/whatsapp` su Telegram richiede il QR corrente; le rotazioni
 aggiornano lo stesso messaggio e il collegamento riuscito rimuove il QR.
+
+## Collegamento tramite codice, sullo stesso Android
+
+Dopo il login admin Telegram, premi **Collega WhatsApp con codice** e invia
+il numero usato dal bot con prefisso internazionale (per esempio `+39...`).
+Il bot restituisce un codice di otto caratteri, eventualmente con lettere.
+In WhatsApp sul telefono di quel numero apri **Dispositivi collegati →
+Collega un dispositivo → Collega con numero di telefono** e inserisci il codice.
+
+Il numero e il codice non vengono scritti nei log. La sessione admin viene
+verificata sia prima della richiesta sia prima di mostrare il codice. Se
+WhatsApp è già collegato, la funzione non interrompe o sostituisce la sessione.

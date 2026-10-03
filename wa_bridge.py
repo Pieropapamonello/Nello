@@ -58,6 +58,23 @@ def build_app(ns):
     group_lock = asyncio.Lock()
     from wa_qr import WhatsAppQR
     pairing = WhatsAppQR(ns)
+    from wa_pairing import PairingCodes
+    codes = PairingCodes(pairing)
+
+    async def code_request(request):
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest()
+        return web.json_response(await codes.request(body.get('admin'), body.get('phone')))
+
+    async def code_take(request):
+        return web.json_response(await codes.take())
+
+    async def code_result(request):
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest()
+        return web.json_response(await codes.finish(body))
     from wa_admin import WhatsAppAdmin
     admin_controls = WhatsAppAdmin(rs)
 
@@ -319,6 +336,9 @@ def build_app(ns):
         web.post('/ranking-ack', ranking_ack),
         web.post('/notify', notify),
         web.post('/admin/command', admin_command),
+        web.post('/pairing/request', code_request),
+        web.get('/pairing/take', code_take),
+        web.post('/pairing/result', code_result),
         web.post('/whatsapp-qr', whatsapp_qr),
         web.post('/whatsapp-qr/resend', whatsapp_qr_resend),
         web.post('/download', download),

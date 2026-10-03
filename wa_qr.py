@@ -73,6 +73,8 @@ class WhatsAppQR:
             return await self._deliver(force=True)
 
     async def _deliver(self, force=False):
+        if getattr(self, 'codes', None) and (self.codes.pending or time.monotonic() < self.codes.pause_qr_until):
+            return {'ok': True, 'skipped': True}
         admin = await self.admin()
         if not admin or not self.ns.telegram_token:
             if self.message:

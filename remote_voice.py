@@ -19,7 +19,7 @@ import aiohttp
 log = logging.getLogger(__name__)
 ENDPOINT = 'https://api.groq.com/openai/v1/audio/transcriptions'
 TEXT_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions'
-MODEL = 'whisper-large-v3'
+MODEL = 'whisper-large-v3-turbo'
 MAX_SECONDS = 180
 MAX_BYTES = 8 * 1024 * 1024
 UNCLEAR = '[Passaggio non riconosciuto con sicurezza.]'

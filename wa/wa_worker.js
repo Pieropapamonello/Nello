@@ -26,6 +26,7 @@ const {
 const pino = require('pino');
 const { transcribeVoice, createVoiceReply } = require('./voice_bridge');
 const { adminRequest, sendAdminMenu } = require('./admin_menu');
+const { createPairingPoller } = require('./pairing_code');
 
 const BRIDGE = process.env.WA_BRIDGE_URL || 'http://127.0.0.1:8765';
 const logger = pino({ level: process.env.WA_LOG_LEVEL || 'warn' });
@@ -318,6 +319,7 @@ async function start() {
   });
 
   let rankingTimer = null;
+  const pairingPoller = createPairingPoller(sock, state, bridge);
   let rankingBusy = false;
   let connected = false;
   const rankingSent = new Set();
@@ -359,11 +361,13 @@ async function start() {
 
   sock.ev.on('connection.update', (u) => {
     const { connection, lastDisconnect, qr } = u;
+    if (connection === 'connecting' || qr) pairingPoller.ready();
     if (qr) {
       console.log('WA: nuovo QR disponibile, invio privato all’admin Telegram.');
       updatePairing({ qr });
     }
     if (connection === 'open') {
+      pairingPoller.stop();
       connected = true;
       updatePairing({ connected: true });
       if (rankingTimer) clearInterval(rankingTimer);
@@ -371,6 +375,7 @@ async function start() {
       pollRankings();
       console.log('WA: connesso a WhatsApp ✅');
     } else if (connection === 'close') {
+      pairingPoller.stop();
       connected = false;
       updatePairing({ connected: false });
       if (rankingTimer) clearInterval(rankingTimer);

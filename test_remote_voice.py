@@ -64,7 +64,7 @@ class RemoteVoiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(calls), 1)
             self.assertNotIn('language', calls[0])
             self.assertNotIn('prompt', calls[0])
-            self.assertEqual(calls[0]['model'], b'whisper-large-v3')
+            self.assertEqual(calls[0]['model'], b'whisper-large-v3-turbo')
             self.assertFalse(prepared[0].exists())
 
     async def test_http_quota_auth_redirect_and_failure_are_bounded(self):
