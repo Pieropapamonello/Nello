@@ -1,19 +1,61 @@
+# One repository, two independent Free services. Secrets remain in Render.
 services:
   - type: web
-    name: tiktok-telegram-bot
-    env: docker
+    name: Nello
+    runtime: docker
+    repo: https://github.com/Pieropapamonello/Nello
+    branch: main
     region: frankfurt
     plan: free
-    dockerfilePath: Dockerfile
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    buildFilter:
+      ignoredPaths:
+        - downloader/**
     envVars:
       - key: TELEGRAM_BOT_TOKEN
+        sync: false
       - key: ADMIN_USER_ID
-      - key: LOG_LEVEL
-        value: INFO
-      - key: TEMP_DIR
-        value: /tmp
-      # Credenziali Firebase: incolla qui il JSON del service account (sync: false
-      # = lo imposti dalla dashboard, non viene committato nel repo).
-      # In alternativa carica un Secret File in /etc/secrets/firebase_credentials.json
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
       - key: FIREBASE_CREDENTIALS_JSON
         sync: false
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: DOWNLOADER_URL
+        sync: false
+      - key: DOWNLOADER_TOKEN
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: VOICE_TRANSCRIBER
+        value: groq
+      - key: WHATSAPP_ENABLED
+        value: "1"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+  - type: web
+    name: nello-downloader
+    runtime: docker
+    repo: https://github.com/Pieropapamonello/Nello
+    branch: main
+    rootDir: downloader
+    region: frankfurt
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    envVars:
+      - key: DOWNLOADER_TOKEN
+        sync: false
+      - key: COOKIE_RENDER_API_KEY
+        sync: false
+      - key: HF_YOUTUBE_URL
+        sync: false
+      - key: HF_YOUTUBE_TOKEN
+        sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"

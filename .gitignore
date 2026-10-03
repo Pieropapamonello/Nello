@@ -31,3 +31,6 @@ smd_debug/
 
 # Editor workspace
 *.code-workspace
+
+_qr.txt
+working_proxies.txt

@@ -1,8 +1,8 @@
 # Nello Downloader
 
-[Deploy su Render](https://render.com/deploy?repo=https://github.com/Pieropapamonello/Nello-downloader)
+Parte del repository unificato [Pieropapamonello/Nello](https://github.com/Pieropapamonello/Nello). Su Render impostare **Root Directory: `downloader`**. Per i servizi esistenti seguire [la migrazione](../MONOREPO.md), senza creare nuove istanze.
 
-Servizio di download separato dal bot [Nello](https://github.com/lamenDino/Nello).
+Servizio di download separato dal bot [Nello](https://github.com/Pieropapamonello/Nello).
 Esegue estrazione e conversione su una propria istanza, con coda seriale,
 controllo durata YouTube (massimo 180 secondi) e protezione della memoria.
 Non invia messaggi alle chat. Il client di riferimento e i test sono inclusi.

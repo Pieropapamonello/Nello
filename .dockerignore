@@ -9,3 +9,5 @@ __pycache__
 *.log
 _qr.txt
 working_proxies.txt
+
+downloader
