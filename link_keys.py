@@ -1,10 +1,21 @@
 """Stable media identity for duplicate detection and Telegram file caching."""
 from urllib.parse import urlsplit, parse_qs
+import re
 
 
 def link_key(url):
     parsed = urlsplit(url.strip())
     host = (parsed.hostname or '').lower()
+    if host in ('youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com',
+                'youtu.be', 'www.youtu.be'):
+        segments = parsed.path.strip('/').split('/')
+        ident = (segments[0] if host.endswith('youtu.be') else
+                 segments[1] if len(segments) >= 2 and segments[0] in ('shorts', 'embed', 'live') else
+                 parse_qs(parsed.query).get('v', [''])[0])
+        if re.fullmatch(r'[A-Za-z0-9_-]{11}', ident):
+            # One cache identity across URL forms. Video IDs are case-sensitive.
+            # The new namespace also invalidates incorrectly dubbed old downloads.
+            return 'youtube.com/video/' + ident
     if host in ('facebook.com', 'www.facebook.com', 'm.facebook.com'):
         if parsed.path.startswith('/share/') or '/posts/' in parsed.path or parsed.path in ('/permalink.php', '/story.php'):
             # Old entries may contain a recommended video unrelated to this post.

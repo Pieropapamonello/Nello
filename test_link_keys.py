@@ -2,6 +2,25 @@ import unittest
 from link_keys import link_key
 
 
+class YouTubeKeys(unittest.TestCase):
+    def test_watch_videos_have_distinct_case_sensitive_identities(self):
+        self.assertNotEqual(link_key('https://youtube.com/watch?v=vBNE3bKMpu8'),
+                            link_key('https://youtube.com/watch?v=a8D8awQaneo'))
+        self.assertNotEqual(link_key('https://youtube.com/watch?v=a8D8awQaneo'),
+                            link_key('https://youtube.com/watch?v=a8d8awqaneo'))
+
+    def test_all_url_forms_share_one_key_and_skip_tracking(self):
+        ident = 'z9A1Wf695sQ'
+        for url in ('https://youtu.be/' + ident + '?si=tracking',
+                    'https://youtube.com/shorts/' + ident,
+                    'https://youtube.com/watch?v=' + ident + '&t=12',
+                    'https://m.youtube.com/embed/' + ident):
+            self.assertEqual(link_key(url), 'youtube.com/video/' + ident)
+
+    def test_existing_broken_cache_namespace_is_not_reused(self):
+        self.assertNotEqual(link_key('https://youtube.com/watch?v=a8D8awQaneo'), 'youtube.com/watch')
+
+
 class FacebookPostCacheTests(unittest.TestCase):
     def test_old_share_cache_is_invalidated_and_token_case_preserved(self):
         key = link_key('https://www.facebook.com/share/14suwq5RADU/?mibextid=tracking')
