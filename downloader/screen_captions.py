@@ -116,7 +116,7 @@ def read_screen(source):
                 samples.append((i, x1, y1, x2, y2, text))
         # Decorative Latin lettering can fool OSD into seeing Cyrillic.
         # Always keep Latin recognition; try other scripts only as a fallback.
-        if alternate_languages and not verified_band(samples, height):
+        if alternate_languages and not samples:
             for _, x1, y1, x2, y2, text in tsv_lines(ocr(sample, alternate_languages)):
                 if height * .02 < y1 < height * .98 and sum(c.isalpha() for c in text) >= 5:
                     alternate_samples.append((i, x1, y1, x2, y2, text))
