@@ -91,7 +91,17 @@ async def extract(request: Request):
             message = str(exc).lower()
             issue = ('access_check' if 'bot' in message or 'sign in' in message or 'reload' in message
                      else 'download_failed')
-            return {'success': False, 'auth_issue': issue, 'error': 'YouTube download unavailable'}
+            # Expose only fixed diagnostic codes, never URLs, cookies or raw exceptions.
+            import re
+            known = ('youtube_media_identity', 'youtube_duration_unknown', 'youtube_duration_changed',
+                     'youtube_invalid_media_file', 'youtube_missing_media_stream')
+            code = next((value for value in known if value in message), None)
+            status = re.search(r'http error (\d{3})', message)
+            code = code or ('http_' + status[1] if status else
+                            'format_unavailable' if 'format' in message and 'available' in message else
+                            'media_unavailable' if 'unavailable' in message else 'extractor_failure')
+            return {'success': False, 'auth_issue': issue, 'error_code': code,
+                    'error': 'YouTube download unavailable'}
 
 
 @app.get('/api/media/{ident}')
