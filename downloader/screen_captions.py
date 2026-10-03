@@ -28,7 +28,7 @@ def text_language(text):
         return None
     from langid.langid import LanguageIdentifier, model
     identifier = LanguageIdentifier.from_modelstring(model, norm_probs=True)
-    code, confidence = identifier.classify(text)
+    code, confidence = identifier.classify(text.casefold())
     return code if confidence >= .85 else None
 
 
@@ -94,6 +94,8 @@ def read_screen(source):
     languages = 'eng+ita+spa+fra+deu+por'
     ffmpeg = ['ffmpeg', '-nostdin', '-v', 'error', '-threads', '1', '-filter_threads', '1']
     samples = []
+    alternate_samples = []
+    alternate_languages = None
     for i, fraction in enumerate((.15, .5, .8)):
         raw = subprocess.check_output(ffmpeg + ['-ss', str(duration*fraction), '-i', str(source),
                     '-vf', f'scale={width}:{height}', '-frames:v', '1', '-threads', '1',
@@ -106,13 +108,22 @@ def read_screen(source):
                                  timeout=10, env=dict(os.environ, OMP_THREAD_LIMIT='1'))
             match = re.search(r'^Script: (.+)$', osd.stdout, re.M)
             script = match[1].strip() if match else ''
-            languages = {'Cyrillic': 'rus+ukr', 'Arabic': 'ara', 'Han': 'chi_sim+jpn',
+            alternate_languages = {'Cyrillic': 'rus+ukr', 'Arabic': 'ara', 'Han': 'chi_sim+jpn',
                          'Japanese': 'jpn', 'Hangul': 'kor', 'Devanagari': 'hin',
-                         'Greek': 'ell', 'Hebrew': 'heb', 'Thai': 'tha'}.get(script, languages)
+                         'Greek': 'ell', 'Hebrew': 'heb', 'Thai': 'tha'}.get(script)
         for _, x1, y1, x2, y2, text in tsv_lines(ocr(sample, languages)):
             if height * .02 < y1 < height * .98 and sum(c.isalpha() for c in text) >= 5:
                 samples.append((i, x1, y1, x2, y2, text))
+        # Decorative Latin lettering can fool OSD into seeing Cyrillic.
+        # Always keep Latin recognition; try other scripts only as a fallback.
+        if alternate_languages and not verified_band(samples, height):
+            for _, x1, y1, x2, y2, text in tsv_lines(ocr(sample, alternate_languages)):
+                if height * .02 < y1 < height * .98 and sum(c.isalpha() for c in text) >= 5:
+                    alternate_samples.append((i, x1, y1, x2, y2, text))
     band = verified_band(samples, height)
+    if not band and alternate_languages:
+        band = verified_band(alternate_samples, height)
+        languages = alternate_languages
     if not band:
         return None
     code, a, b = band

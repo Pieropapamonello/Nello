@@ -9,6 +9,12 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual(text_language('Questi sono i sottotitoli italiani del video di oggi.'), 'it')
         self.assertIsNone(text_language('Logo'))
 
+    def test_stylized_uppercase_italian_title_is_not_foreign(self):
+        self.assertEqual(text_language("L'IA STA PRENDENDO IL SOPRAVVENTO"), 'it')
+        samples = [(i, 10, 45, 470, 85, "L'IA STA PRENDENDO IL SOPRAVVENTO")
+                   for i in range(3)]
+        self.assertEqual(verified_band(samples, 850)[0], 'it')
+
     def test_static_logo_never_authorizes_mask(self):
         samples = [(i, 20, 20, 100, 40, 'BRAND NAME') for i in range(3)]
         self.assertIsNone(verified_band(samples, 640))
