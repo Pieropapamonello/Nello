@@ -21,5 +21,9 @@ termina al riavvio e viene revocata quando cambia la password. Dopo cinque
 password errate, il numero deve attendere 15 minuti prima di riprovare.
 
 Il QR di ricollegamento WhatsApp viene inviato soltanto all'admin Telegram in
-privato. Il comando `/whatsapp` su Telegram richiede il QR corrente; le rotazioni
+privato, durante una sessione admin autenticata. Su Telegram, usa `/start` e
+premi **Accedi come admin**, quindi invia la password nella chat privata.
+Il menu permette anche di uscire: dopo logout, scadenza o riavvio del bot
+non verranno inviati altri QR finché non accedi nuovamente.
+Il comando `/whatsapp` su Telegram richiede il QR corrente; le rotazioni
 aggiornano lo stesso messaggio e il collegamento riuscito rimuove il QR.

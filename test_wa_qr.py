@@ -7,9 +7,22 @@ from wa_qr import WhatsAppQR, command
 
 class PairingTests(unittest.IsolatedAsyncioTestCase):
     def make_pairing(self, admin=123):
+        import os
+        from telegram_admin import session
+        session.user = 123
+        session.expires = __import__('time').monotonic() + 60
+        session.password = os.getenv('ADMIN_PASSWORD', '')
         store = SimpleNamespace(get_admin_chat=AsyncMock(return_value=admin))
         return WhatsAppQR(SimpleNamespace(ranking_store=store, admin_user_id=0,
                                           telegram_token='test-token'))
+
+    @patch('wa_qr.requests.post')
+    async def test_configured_or_persisted_admin_without_login_never_gets_qr(self, post):
+        from telegram_admin import session
+        pairing = self.make_pairing()
+        session.logout(123)
+        self.assertFalse((await pairing.update({'qr': 'sensitive-qr-value' * 4}))['ok'])
+        post.assert_not_called()
 
     @patch('wa_qr.requests.post')
     async def test_group_admin_never_receives_pairing_material(self, post):

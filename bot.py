@@ -54,13 +54,14 @@ ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD') or ''
 async def effective_admin_id():
     """ID a cui mandare gli avvisi: l'override impostato via /admin se presente,
     altrimenti ADMIN_USER_ID."""
+    from telegram_admin import session
+    active = session.current()
+    if not active:
+        return 0
     try:
-        c = await ranking_store.get_admin_chat()
-        if c:
-            return int(c)
+        return active if int(await ranking_store.get_admin_chat() or 0) == active else 0
     except Exception:
-        pass
-    return ADMIN_USER_ID
+        return 0
 
 # Credenziali Render del bot (opzionali): comandi di deploy amministrativi
 RENDER_API_KEY = os.getenv('RENDER_API_KEY')
@@ -603,55 +604,12 @@ def note_download_success(platform: str):
     _fail_streak[platform] = 0
 
 
-async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/admin <password> (in PRIVATO): autentica come admin e imposta questo chat
-    come destinatario degli avvisi (cookie scaduti, WhatsApp scollegato)."""
-    msg = update.message
-    chat = update.effective_chat
-    if not msg:
-        return
-    # Solo in privato: non esporre la password nel gruppo
-    if chat.type != 'private':
-        try:
-            await msg.delete()
-        except Exception:
-            pass
-        try:
-            await context.bot.send_message(update.effective_user.id,
-                                           "🔒 Usa /admin in chat privata con me, non nel gruppo.")
-        except Exception:
-            pass
-        return
-    parts = (msg.text or '').split(maxsplit=1)
-    pwd = parts[1].strip() if len(parts) > 1 else ''
-    # cancella subito il messaggio con la password (igiene)
-    try:
-        await msg.delete()
-    except Exception:
-        pass
-    if not ADMIN_PASSWORD:
-        await context.bot.send_message(chat.id, "⚠️ Nessuna password admin configurata.")
-        return
-    if pwd != ADMIN_PASSWORD:
-        await context.bot.send_message(chat.id, "❌ Password errata.")
-        return
-    try:
-        await ranking_store.set_admin_chat(update.effective_user.id)
-    except Exception as e:
-        logger.warning(f"set_admin_chat fallito: {e}")
-    await context.bot.send_message(
-        chat.id,
-        "✅ <b>Sei autenticato come admin.</b>\nGli avvisi (cookie scaduti, WhatsApp "
-        "scollegato) arriveranno qui in privato.",
-        parse_mode=ParseMode.HTML,
-    )
-
-
 # =========================
 # COMMANDS
 # =========================
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from telegram_admin import keyboard as admin_keyboard
     logger.info(f"Received /start in chat {update.effective_chat.id} from {update.effective_user.id}")
     await update.message.reply_text(
         "Ciao! Mandami un link da TikTok, Instagram, Facebook, YouTube Shorts, "
@@ -665,6 +623,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /stats — le tue statistiche\n\n"
         f"Chat ID di questo gruppo: <code>{update.effective_chat.id}</code>",
         parse_mode=ParseMode.HTML,
+        reply_markup=admin_keyboard(update),
     )
 
 
@@ -824,14 +783,14 @@ def render_trigger_deploy() -> bool:
 
 async def chats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin: mostra in quali chat è usato il bot."""
-    if update.effective_user.id != ADMIN_USER_ID:
-        await update.message.reply_text("🔒 Solo l'admin può usare questo comando.")
+    if update.effective_user.id != await effective_admin_id():
+        await update.effective_message.reply_text("🔒 Solo l'admin può usare questo comando.")
         return
     try:
         chats = await ranking_store.get_chats()
     except Exception as e:
         logger.warning(f"get_chats fallito: {e}")
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             "⚠️ Database non raggiungibile.\n"
             "Probabile causa: <b>Firestore non abilitato</b> nel progetto Firebase. "
             "Vai su console.firebase.google.com → progetto → <b>Firestore Database → Crea database</b>.",
@@ -839,31 +798,31 @@ async def chats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     if not chats:
-        await update.message.reply_text("Nessuna chat registrata ancora.")
+        await update.effective_message.reply_text("Nessuna chat registrata ancora.")
         return
     text = f"💬 <b>Chat che usano il bot</b> ({len(chats)})\n\n"
     for c in chats[:30]:
         title = escape(str(c.get('title') or c.get('id')))
         text += f"• {title} — <b>{c.get('count', 0)}</b> download\n"
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
 async def sfida_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin: lancia una sfida a tema per la settimana."""
-    if update.effective_user.id != ADMIN_USER_ID:
-        await update.message.reply_text("🔒 Solo l'admin può lanciare una sfida.")
+    if update.effective_user.id != await effective_admin_id():
+        await update.effective_message.reply_text("🔒 Solo l'admin può lanciare una sfida.")
         return
     theme = " ".join(context.args or []).strip()
     if not theme:
-        await update.message.reply_text("Uso: <code>/sfida &lt;tema&gt;</code>\nEs: <code>/sfida il video più assurdo</code>", parse_mode=ParseMode.HTML)
+        await update.effective_message.reply_text("Uso: <code>/sfida &lt;tema&gt;</code>\nEs: <code>/sfida il video più assurdo</code>", parse_mode=ParseMode.HTML)
         return
     try:
         await ranking_store.set_challenge(theme, update.effective_user.full_name)
     except Exception as e:
         logger.warning(f"set_challenge fallito: {e}")
-        await update.message.reply_text("⚠️ Non riesco a salvare la sfida (database).")
+        await update.effective_message.reply_text("⚠️ Non riesco a salvare la sfida (database).")
         return
-    await update.message.reply_text(
+    await update.effective_message.reply_text(
         f"🎯 <b>NUOVA SFIDA DELLA SETTIMANA!</b>\n\n«{escape(theme)}»\n\n"
         f"Postate i vostri video e fateli votare con 👍😂🔥😍 — "
         f"il più amato vince la <b>🏅 Medaglia del pubblico</b> sabato sera!",
@@ -1725,9 +1684,14 @@ def main():
     application.add_handler(CommandHandler("stats", stats_cmd))
     application.add_handler(CommandHandler("profilo", profilo_cmd))
     application.add_handler(CommandHandler("votati", votati_cmd))
-    application.add_handler(CommandHandler("admin", admin_cmd))
     from wa_qr import command as whatsapp_command
     application.add_handler(CommandHandler("whatsapp", whatsapp_command(effective_admin_id)))
+    from telegram_admin import AdminUI
+    admin_ui = AdminUI(ranking_store, whatsapp_command(effective_admin_id), chats_cmd)
+    application.add_handler(CommandHandler("admin", admin_ui.command))
+    application.add_handler(CommandHandler("menu", admin_ui.command))
+    application.add_handler(CallbackQueryHandler(admin_ui.callback, pattern=r"^adm:"))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_ui.capture), group=-2)
     from cookie_admin import CookieAdmin
     cookie_admin = CookieAdmin(effective_admin_id, ranking_store)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, cookie_admin.capture_text), group=-1)

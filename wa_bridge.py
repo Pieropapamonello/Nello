@@ -254,13 +254,7 @@ def build_app(ns):
             return web.json_response({'ok': False})
         text = (b.get('text') or '').strip()
         token = getattr(ns, 'telegram_token', None)
-        admin = None
-        try:
-            admin = await rs.get_admin_chat()
-        except Exception:
-            admin = None
-        if not admin:
-            admin = getattr(ns, 'admin_user_id', None)
+        admin = await pairing.admin()
         if not (token and admin and text):
             return web.json_response({'ok': False})
         # anti-spam: max un avviso ogni 10 minuti
@@ -305,6 +299,18 @@ def build_app(ns):
         return web.Response(text="OK")
 
     app = web.Application(client_max_size=8 * 1024 * 1024)
+    async def pairing_session_monitor(app):
+        async def monitor():
+            while True:
+                await asyncio.sleep(5)
+                async with pairing.lock:
+                    if pairing.message and not await pairing.admin():
+                        await asyncio.to_thread(pairing._delete)
+        task = asyncio.create_task(monitor())
+        yield
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    app.cleanup_ctx.append(pairing_session_monitor)
     from voice_messages import whatsapp_voice
     app.router.add_post('/voice', whatsapp_voice)
     app.add_routes([

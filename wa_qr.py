@@ -23,16 +23,20 @@ class WhatsAppQR:
         self.lock = asyncio.Lock()
 
     async def admin(self):
+        from telegram_admin import session
+        active = session.current()
+        if not active:
+            return None
         try:
             ident = await self.ns.ranking_store.get_admin_chat()
         except Exception:
             ident = None
         try:
-            ident = int(ident or self.ns.admin_user_id or 0)
+            ident = int(ident or 0)
         except (ValueError, TypeError):
             return None
         # Negative IDs are groups/channels. Never deliver pairing credentials there.
-        return ident if ident > 0 else None
+        return ident if ident > 0 and ident == active else None
 
     def status(self):
         return {'connected': self.connected,
@@ -71,6 +75,8 @@ class WhatsAppQR:
     async def _deliver(self, force=False):
         admin = await self.admin()
         if not admin or not self.ns.telegram_token:
+            if self.message:
+                await asyncio.to_thread(self._delete)
             return {'ok': False}
         if self.message and self.message[0] != admin:
             await asyncio.to_thread(self._delete)
